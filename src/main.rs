@@ -15,5 +15,6 @@ fn main() {
         exit(1);
     }
 
-    instrument_binary(&args[1]).unwrap();
+    let out = instrument_binary(&args[1]).unwrap();
+    println!("{}", serde_json::to_string_pretty(&out).unwrap());
 }

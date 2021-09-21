@@ -202,7 +202,7 @@ impl fmt::Display for Regs {
 
 // Happy result :)
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct State {
+pub struct MandrakeOutput {
     success: bool, // Will always be true
     pid: u32,
     history: Vec<Regs>,
@@ -212,9 +212,9 @@ pub struct State {
     exit_code: Option<i32>,
 }
 
-impl State {
+impl MandrakeOutput {
     fn new(pid: u32) -> Self {
-        State {
+        MandrakeOutput {
             success: true,
             pid: pid,
             history: vec![],
@@ -257,7 +257,7 @@ impl Error {
     }
 }
 
-pub fn instrument_binary(binary_path: &str) -> SimpleResult<State> {
+pub fn instrument_binary(binary_path: &str) -> SimpleResult<MandrakeOutput> {
     // This spawns the process and calls waitpid(), so it reaches the first
     // system call (execve)
     let child = Command::new(binary_path)
@@ -279,12 +279,12 @@ pub fn instrument_binary(binary_path: &str) -> SimpleResult<State> {
     //step(pid, None).unwrap_or_else(|e| Error::die(&format!("Failed to step into the code: {}", e)));
 
     // Build a state then loop, one instruction at a time, till this ends
-    let mut state = State::new(child.id());
+    let mut result = MandrakeOutput::new(child.id());
     loop {
         match wait() {
             Ok(WaitStatus::Exited(_, code)) => {
-                state.exit_reason = Some(format!("Process exited cleanly with exit code {}", code));
-                state.exit_code = Some(code);
+                result.exit_reason = Some(format!("Process exited cleanly with exit code {}", code));
+                result.exit_code = Some(code);
                 break;
             }
             Ok(WaitStatus::Stopped(_, sig)) => {
@@ -316,25 +316,25 @@ pub fn instrument_binary(binary_path: &str) -> SimpleResult<State> {
 
                         // Since it's not an int3 instruction, we need to log and step
                         //if(regs.rip.value & HIDDEN_MASK) != HIDDEN_ADDR {
-                        state.history.push(regs);
+                        result.history.push(regs);
                         //}
 
                         continue;
                     },
 
                     // Check for the special timeout symbol (since we set alarm() in the harness)
-                    Signal::SIGALRM => { state.exit_reason = Some(format!("Execution timed out (SIGALRM) @ 0x{:08x}", rip)); break; },
+                    Signal::SIGALRM => { result.exit_reason = Some(format!("Execution timed out (SIGALRM) @ 0x{:08x}", rip)); break; },
 
                     // Try and catch other obvious problems
-                    Signal::SIGABRT => { state.exit_reason = Some(format!("Execution crashed with an abort (SIGABRT) @ 0x{:08x}", rip)); break; }
-                    Signal::SIGBUS => { state.exit_reason = Some(format!("Execution crashed with a bus error (bad memory access) (SIGBUS) @ 0x{:08x}", rip)); break; }
-                    Signal::SIGFPE => { state.exit_reason = Some(format!("Execution crashed with a floating point error (SIGFPE) @ 0x{:08x}", rip)); break; }
-                    Signal::SIGILL => { state.exit_reason = Some(format!("Execution crashed with an illegal instruction (SIGILL) @ 0x{:08x}", rip)); break; },
-                    Signal::SIGKILL => { state.exit_reason = Some(format!("Execution was killed (SIGKILL) @ 0x{:08x}", rip)); break; },
-                    Signal::SIGSEGV => { state.exit_reason = Some(format!("Execution crashed with a segmentation fault (SIGSEGV) @ 0x{:08x}", rip)); break; },
-                    Signal::SIGTERM => { state.exit_reason = Some(format!("Execution was terminated (SIGTERM) @ 0x{:08x}", rip)); break; },
+                    Signal::SIGABRT => { result.exit_reason = Some(format!("Execution crashed with an abort (SIGABRT) @ 0x{:08x}", rip)); break; }
+                    Signal::SIGBUS => { result.exit_reason = Some(format!("Execution crashed with a bus error (bad memory access) (SIGBUS) @ 0x{:08x}", rip)); break; }
+                    Signal::SIGFPE => { result.exit_reason = Some(format!("Execution crashed with a floating point error (SIGFPE) @ 0x{:08x}", rip)); break; }
+                    Signal::SIGILL => { result.exit_reason = Some(format!("Execution crashed with an illegal instruction (SIGILL) @ 0x{:08x}", rip)); break; },
+                    Signal::SIGKILL => { result.exit_reason = Some(format!("Execution was killed (SIGKILL) @ 0x{:08x}", rip)); break; },
+                    Signal::SIGSEGV => { result.exit_reason = Some(format!("Execution crashed with a segmentation fault (SIGSEGV) @ 0x{:08x}", rip)); break; },
+                    Signal::SIGTERM => { result.exit_reason = Some(format!("Execution was terminated (SIGTERM) @ 0x{:08x}", rip)); break; },
 
-                    _ => { state.exit_reason = Some(format!("Execution stopped by unexpected signal: {}", sig)); break; }
+                    _ => { result.exit_reason = Some(format!("Execution stopped by unexpected signal: {}", sig)); break; }
                 };
 
             },
@@ -350,7 +350,7 @@ pub fn instrument_binary(binary_path: &str) -> SimpleResult<State> {
 
     // I don't know why, but this fixes a random timeout that sometimes breaks
     // this :-/
-    println!("");
+    //println!("");
 
     // Whatever situation we're in, we need to make sure the process is dead
     // (We discard errors here, because we don't really care if it was already
@@ -367,18 +367,15 @@ pub fn instrument_binary(binary_path: &str) -> SimpleResult<State> {
         .read_to_end(&mut stdout)
         .unwrap_or_else(|e| Error::die(&format!("Failed while trying to read stdout: {}", e)));
 
-    state.stdout = Some(String::from_utf8_lossy(&stdout).to_string());
+    result.stdout = Some(String::from_utf8_lossy(&stdout).to_string());
 
     let mut stderr: Vec<u8> = vec![];
     child.stderr
         .unwrap_or_else(|| Error::die(&format!("Couldn't get a handle to stderr")))
         .read_to_end(&mut stderr)
         .unwrap_or_else(|e| Error::die(&format!("Failed while trying to read stderr: {}", e)));
-    state.stderr = Some(String::from_utf8_lossy(&stderr).to_string());
+    result.stderr = Some(String::from_utf8_lossy(&stderr).to_string());
 
-    // Send the json to stdout
-    println!("{}", serde_json::to_string_pretty(&state).unwrap());
-
-    Ok(state)
+    Ok(result)
 }
 
