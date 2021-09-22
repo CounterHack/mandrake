@@ -1,211 +1,28 @@
-use std::fmt;
 use std::io::prelude::*;
-use std::process::{exit, Command, Stdio};
+use std::process::{Command, Stdio, Child};
+use std::collections::HashMap;
+use std::path::Path;
 
-use byteorder::{LittleEndian, WriteBytesExt};
-use iced_x86::{Decoder, DecoderOptions, Formatter, NasmFormatter};
-use nix::sys::ptrace::{getregs, read, AddressType, step, cont, kill};
+use nix::sys::ptrace::{step, cont, kill};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{wait, WaitStatus};
 use nix::unistd::Pid;
 use serde::{Serialize, Deserialize};
-use simple_error::{bail, SimpleResult};
+use simple_error::{bail, SimpleResult, SimpleError};
 use spawn_ptrace::CommandPtraceSpawn;
 
+mod analyzed_value;
+use analyzed_value::*;
 
-// The number of bytes to read when analyzing memory
-const SNIPPIT_LENGTH: usize = 32;
-const MINIMUM_VIABLE_STRING: usize = 6;
-//const MAX_INSTRUCTIONS: usize = 128; // TODO: This is too short
+pub const DEFAULT_SNIPPIT_LENGTH: u64 = 32;
+pub const DEFAULT_MINIMUM_VIABLE_STRING: u64 = 6;
+pub const DEFAULT_HARNESS_PATH: &'static str = "./harness/harness";
 
-// These let us have "hidden" addresses that don't show up in execution logs
-const HIDDEN_ADDR: u64 = 0x12120000;
-const HIDDEN_MASK: u64 = 0xFFFF0000;
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct AnalyzedPointer {
-    // The memory - 128-bits of it, which seems like enough
-    // We use this instead of a numeric value because we wouldn't know how many bits of the value to use
-    memory: Vec<u8>,
-
-    // The decoded instruction, if possible
-    as_instruction: Option<String>,
-
-    // A decoded string (UTF-8), if possible
-    as_string: Option<String>,
-}
-
-impl AnalyzedPointer {
-    fn from_memory(pid: Pid, addr: usize, truncate_to_code: bool) -> Option<Self> {
-        let mut data: Vec<u8> = vec![];
-
-        // This reads just enough data to get the proper length
-        for i in 0..((SNIPPIT_LENGTH + 7) / 8) {
-            let this_chunk = match read(pid, (addr + (i * 8)) as AddressType) {
-                Ok(chunk) => chunk,
-                // If the memory isn't readable, just return None
-                Err(_e) => return None,
-            };
-
-            // I don't think this can actually fail
-            data.write_i64::<LittleEndian>(this_chunk).unwrap();
-        }
-
-        // Truncate it to the actual size they asked for
-        data.truncate(SNIPPIT_LENGTH);
-
-        // Try and decode from assembly
-        let mut decoder = Decoder::with_ip(64, &data, addr as u64, DecoderOptions::NONE);
-        let as_instruction = match decoder.can_decode() {
-            true => {
-                let mut output = String::new();
-                let decoded = decoder.decode();
-
-                if truncate_to_code {
-                    data.truncate(decoded.len());
-                }
-                NasmFormatter::new().format(&decoded, &mut output);
-
-                if output == "(bad)" {
-                    None
-                } else {
-                    Some(output)
-                }
-            }
-            false => None,
-        };
-
-        // Try and interpret as a string
-        let string_data: Vec<u8> = data.clone().into_iter().take_while(|d| *d != 0).collect();
-        let as_string = match std::str::from_utf8(&string_data) {
-            Ok(s)  => {
-                if s.len() > MINIMUM_VIABLE_STRING {
-                    Some(s.to_string())
-                } else {
-                    None
-                }
-            },
-            Err(_) => None,
-        };
-
-        Some(AnalyzedPointer {
-            memory: Vec::new(),//data,
-            as_instruction: as_instruction,
-            as_string: as_string,
-        })
-    }
-}
-
-impl fmt::Display for AnalyzedPointer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let data: Vec<String> = self.memory.iter().map(|b| format!("{:02x}", b)).collect();
-
-        write!(f, "{}", data.join(" "))?;
-
-        if let Some(s) = &self.as_string {
-            write!(f, " (\"{}\")", s)?;
-        }
-
-        if let Some(i) = &self.as_instruction {
-            write!(f, " ({})", i)?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct AnalyzedValue {
-    // The actual value
-    value: u64,
-
-    // If it's a pointer, this is information about what it's pointing to
-    target: Option<AnalyzedPointer>,
-}
-
-impl AnalyzedValue {
-    fn from_u64(n: u64, pid: Pid, truncate_to_code: bool) -> Self {
-        AnalyzedValue {
-            value: n,
-            target: AnalyzedPointer::from_memory(pid, n as usize, truncate_to_code),
-        }
-    }
-}
-
-impl fmt::Display for AnalyzedValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.target {
-            Some(t) => write!(f, "{:x} ({})", self.value, t)?,
-            None => write!(f, "{:x}", self.value)?,
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct Regs {
-    rip: AnalyzedValue,
-    rax: AnalyzedValue,
-    rbx: AnalyzedValue,
-    rcx: AnalyzedValue,
-    rdx: AnalyzedValue,
-    rsi: AnalyzedValue,
-    rdi: AnalyzedValue,
-    rbp: AnalyzedValue,
-    rsp: AnalyzedValue,
-}
-
-impl Regs {
-    fn from_pid(pid: Pid) -> SimpleResult<Regs> {
-        // Try and get the registers
-        let regs = match getregs(pid) {
-            Ok(r) => r,
-            Err(e) => bail!("Couldn't read registers: {}", e),
-        };
-
-        // Analyze and save each one
-        Ok(Regs {
-            rip: AnalyzedValue::from_u64(regs.rip, pid, true),
-            rax: AnalyzedValue::from_u64(regs.rax, pid, false),
-            rbx: AnalyzedValue::from_u64(regs.rbx, pid, false),
-            rcx: AnalyzedValue::from_u64(regs.rcx, pid, false),
-            rdx: AnalyzedValue::from_u64(regs.rdx, pid, false),
-            rsi: AnalyzedValue::from_u64(regs.rsi, pid, false),
-            rdi: AnalyzedValue::from_u64(regs.rdi, pid, false),
-            rbp: AnalyzedValue::from_u64(regs.rbp, pid, false),
-            rsp: AnalyzedValue::from_u64(regs.rsp, pid, false),
-        })
-    }
-}
-
-impl fmt::Display for Regs {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let instruction = match &self.rip.target {
-            Some(t) => t.to_string(),
-            None => "Invalid instruction pointer".to_string(),
-        };
-        writeln!(f, " rax: {}", self.rax)?;
-        writeln!(f, " rbx: {}", self.rbx)?;
-        writeln!(f, " rcx: {}", self.rcx)?;
-        writeln!(f, " rdx: {}", self.rdx)?;
-        writeln!(f, " rsi: {}", self.rsi)?;
-        writeln!(f, " rdi: {}", self.rdi)?;
-        writeln!(f, " rbp: {}", self.rbp)?;
-        writeln!(f, " rsp: {}", self.rsp)?;
-        writeln!(f)?;
-        writeln!(f, "{:016x} {}", self.rip.value, instruction)?;
-
-        Ok(())
-    }
-}
-
-// Happy result :)
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MandrakeOutput {
     success: bool, // Will always be true
     pid: u32,
-    history: Vec<Regs>,
+    history: Vec<HashMap<String, AnalyzedValue>>,
     stdout: Option<String>,
     stderr: Option<String>,
     exit_reason: Option<String>,
@@ -231,151 +48,216 @@ impl MandrakeOutput {
     }
 }
 
-// Sad result :(
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct Error {
-    success: bool, // Will always be false
-    error_message: String,
+pub struct Mandrake {
+    snippit_length: u64,
+    minimum_viable_string: u64,
+    hidden_address: Option<u64>,
+    hidden_mask: Option<u64>,
+    visible_address: Option<u64>,
+    visible_mask: Option<u64>,
+    max_logged_instructions: Option<u64>,
+    capture_stdout: bool,
+    capture_stderr: bool,
 }
 
-impl Error {
-    fn new(message: &str) -> Self {
-        Error {
-            success: false,
-            error_message: message.to_string(),
+impl Mandrake {
+    pub fn new() -> Self {
+        Mandrake {
+            snippit_length: DEFAULT_SNIPPIT_LENGTH,
+            minimum_viable_string: DEFAULT_MINIMUM_VIABLE_STRING,
+            visible_address: None,
+            visible_mask: None,
+            hidden_address: None,
+            hidden_mask: None,
+            max_logged_instructions: None,
+            capture_stdout: true,
+            capture_stderr: true,
         }
     }
 
-    fn print(&self) {
-        // I'm hoping that the to-json part can't fail
-        println!("{}", serde_json::to_string_pretty(self).unwrap());
+    pub fn set_hidden_address(&mut self, address: u64, mask: u64) {
+        self.hidden_address = Some(address);
+        self.hidden_mask = Some(mask);
     }
 
-    fn die(message: &str) -> ! { // Return type '!' means it can't return
-        Self::new(message).print();
-        exit(1);
+    pub fn set_visible_address(&mut self, address: u64, mask: u64) {
+        self.visible_address = Some(address);
+        self.visible_mask = Some(mask);
     }
-}
 
-pub fn instrument_binary(binary_path: &str) -> SimpleResult<MandrakeOutput> {
-    // This spawns the process and calls waitpid(), so it reaches the first
-    // system call (execve)
-    let child = Command::new(binary_path)
-        //.arg(&temp_file)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn_ptrace()
-        .unwrap_or_else(|e| Error::die(&format!("Could not execute testing harness: {}", e)));
+    fn go(&self, child: Child) -> SimpleResult<MandrakeOutput> {
+        // Build a state then loop, one instruction at a time, till this ends
+        let mut result = MandrakeOutput::new(child.id());
+        let pid = Pid::from_raw(child.id() as i32);
 
-    // Get a pid structure
-    let pid = Pid::from_raw(child.id() as i32);
+        loop {
+            match wait() {
+                Ok(WaitStatus::Exited(_, code)) => {
+                    result.exit_reason = Some(format!("Process exited cleanly with exit code {}", code));
+                    result.exit_code = Some(code);
+                    break;
+                }
+                Ok(WaitStatus::Stopped(_, sig)) => {
+                    // Get rip when it crashes
+                    let regs = get_registers_from_pid(pid)
+                        .map_err(|e| SimpleError::new(format!("Couldn't read registers: {}", e)))?;
 
-    // Find the first breakpiont
-    cont(pid, None).unwrap_or_else(|e| Error::die(&format!("Couldn't resume execution: {}", e)));
-    //wait().unwrap_or_else(|e| Error::die(&format!("Failed while waiting for process to resume: {}", e)));
+                    // Get the value for RIP, die if it's missing (shouldn't happen)
+                    let rip = match regs.get("rip") {
+                        Some(rip) => rip,
+                        None => bail!("RIP is missing from the register list!"),
+                    };
 
-    // Step over it - this will perform the call() and move us to the start of
-    // the user's code
-    //step(pid, None).unwrap_or_else(|e| Error::die(&format!("Failed to step into the code: {}", e)));
+                    match sig {
+                        // Do nothing, this is the happy call
+                        Signal::SIGTRAP => {
+                            // No matter what, step past the instruction
+                            step(pid, None)
+                                .map_err(|e| SimpleError::new(&format!("Couldn't step through code: {}", e)))?;
 
-    // Build a state then loop, one instruction at a time, till this ends
-    let mut result = MandrakeOutput::new(child.id());
-    loop {
-        match wait() {
-            Ok(WaitStatus::Exited(_, code)) => {
-                result.exit_reason = Some(format!("Process exited cleanly with exit code {}", code));
-                result.exit_code = Some(code);
-                break;
-            }
-            Ok(WaitStatus::Stopped(_, sig)) => {
-                // Get rip when it crashes
-                let regs = Regs::from_pid(pid).unwrap_or_else(|e| Error::die(&format!("Couldn't read registers: {}", e)));
-                let rip = regs.rip.value;
+                            // If we get an int3, it means we want to stop logging (ie, continue)
+                            if let AnalyzedValue::Pointer(pointer) = &rip {
+                                if let Some(instruction) = &pointer.as_instruction {
+                                    if instruction == "int3" {
+                                        // Waiting for the step() to finish before continuing is important
+                                        wait()
+                                            .map_err(|e| SimpleError::new(&format!("Couldn't step over breakpoint: {}", e)))?;
 
-
-                match sig {
-                    // Do nothing, this is the happy call
-                    Signal::SIGTRAP => {
-                        // Get the current state
-                        let regs = Regs::from_pid(pid).unwrap_or_else(|e| Error::die(&format!("Couldn't read registers: {}", e)));
-
-                        // No matter what, step past the instruction
-                        step(pid, None).unwrap_or_else(|e| Error::die(&format!("Couldn't step through code: {}", e)));
-
-                        // If we get an int3, it means we want to stop logging (ie, continue)
-                        if let Some(pointer) = &regs.rip.target {
-                            if let Some(instruction) = &pointer.as_instruction {
-                                if instruction == "int3" {
-                                    // Waiting for the step() to finish before continuing is important
-                                    wait().unwrap_or_else(|e| Error::die(&format!("Couldn't step over breakpoint: {}", e)));
-                                    cont(pid, None).unwrap_or_else(|e| Error::die(&format!("Couldn't resume execution after breakpoint: {}", e)));
-                                    continue;
+                                        cont(pid, None)
+                                            .map_err(|e| SimpleError::new(&format!("Couldn't resume execution after breakpoint: {}", e)))?;
+                                        continue;
+                                    }
                                 }
                             }
-                        }
 
-                        // Since it's not an int3 instruction, we need to log and step
-                        //if(regs.rip.value & HIDDEN_MASK) != HIDDEN_ADDR {
-                        result.history.push(regs);
-                        //}
+                            // Suppress addresses that match the hidden_address / hidden_mask, if set
+                            if let Some(hidden_address) = self.hidden_address {
+                                if let Some(hidden_mask) = self.hidden_mask {
+                                    if (rip.value() & hidden_mask) == hidden_address {
+                                        continue;
+                                    }
+                                }
+                            }
 
-                        continue;
-                    },
+                            // Suppress addresses that don't match the visible_address / visible_mask
+                            if let Some(visible_address) = self.visible_address {
+                                if let Some(visible_mask) = self.visible_mask {
+                                    if (rip.value() & visible_mask) != visible_address {
+                                        continue;
+                                    }
+                                }
+                            }
 
-                    // Check for the special timeout symbol (since we set alarm() in the harness)
-                    Signal::SIGALRM => { result.exit_reason = Some(format!("Execution timed out (SIGALRM) @ 0x{:08x}", rip)); break; },
+                            result.history.push(regs);
 
-                    // Try and catch other obvious problems
-                    Signal::SIGABRT => { result.exit_reason = Some(format!("Execution crashed with an abort (SIGABRT) @ 0x{:08x}", rip)); break; }
-                    Signal::SIGBUS => { result.exit_reason = Some(format!("Execution crashed with a bus error (bad memory access) (SIGBUS) @ 0x{:08x}", rip)); break; }
-                    Signal::SIGFPE => { result.exit_reason = Some(format!("Execution crashed with a floating point error (SIGFPE) @ 0x{:08x}", rip)); break; }
-                    Signal::SIGILL => { result.exit_reason = Some(format!("Execution crashed with an illegal instruction (SIGILL) @ 0x{:08x}", rip)); break; },
-                    Signal::SIGKILL => { result.exit_reason = Some(format!("Execution was killed (SIGKILL) @ 0x{:08x}", rip)); break; },
-                    Signal::SIGSEGV => { result.exit_reason = Some(format!("Execution crashed with a segmentation fault (SIGSEGV) @ 0x{:08x}", rip)); break; },
-                    Signal::SIGTERM => { result.exit_reason = Some(format!("Execution was terminated (SIGTERM) @ 0x{:08x}", rip)); break; },
+                            continue;
+                        },
 
-                    _ => { result.exit_reason = Some(format!("Execution stopped by unexpected signal: {}", sig)); break; }
-                };
+                        // Check for the special timeout symbol (since we set alarm() in the harness)
+                        Signal::SIGALRM => { result.exit_reason = Some(format!("Execution timed out (SIGALRM) @ {}", rip)); break; },
 
-            },
-            Ok(s) => Error::die(&format!("Unexpected stop reason: {:?}", s)),
-            Err(e) => Error::die(&format!("Unexpected wait() error: {:?}", e)),
+                        // Try and catch other obvious problems
+                        Signal::SIGABRT => { result.exit_reason = Some(format!("Execution crashed with an abort (SIGABRT) @ {}", rip)); break; }
+                        Signal::SIGBUS => { result.exit_reason = Some(format!("Execution crashed with a bus error (bad memory access) (SIGBUS) @ {}", rip)); break; }
+                        Signal::SIGFPE => { result.exit_reason = Some(format!("Execution crashed with a floating point error (SIGFPE) @ {}", rip)); break; }
+                        Signal::SIGILL => { result.exit_reason = Some(format!("Execution crashed with an illegal instruction (SIGILL) @ {}", rip)); break; },
+                        Signal::SIGKILL => { result.exit_reason = Some(format!("Execution was killed (SIGKILL) @ {}", rip)); break; },
+                        Signal::SIGSEGV => { result.exit_reason = Some(format!("Execution crashed with a segmentation fault (SIGSEGV) @ {}", rip)); break; },
+                        Signal::SIGTERM => { result.exit_reason = Some(format!("Execution was terminated (SIGTERM) @ {}", rip)); break; },
+
+                        _ => { result.exit_reason = Some(format!("Execution stopped by unexpected signal: {}", sig)); break; }
+                    };
+
+                },
+                Ok(s) => bail!("Unexpected stop reason: {:?}", s),
+                Err(e) => bail!("Unexpected wait() error: {:?}", e),
+            };
+
+    //if state.history.len() > MAX_INSTRUCTIONS {
+    //    state.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", MAX_INSTRUCTIONS));
+    //    break;
+    //}
+        }
+
+        // I don't know why, but this fixes a random timeout that sometimes breaks
+        // this :-/
+        //println!("");
+
+        // Whatever situation we're in, we need to make sure the process is dead
+        // (We discard errors here, because we don't really care if it was already
+        // killed or failed to kill or whatever)
+        match kill(pid) {
+            Ok(_) => (),
+            Err(_) => (),
         };
 
-//if state.history.len() > MAX_INSTRUCTIONS {
-//    state.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", MAX_INSTRUCTIONS));
-//    break;
-//}
+        // If we made it here, grab the stdout + stderr
+        if self.capture_stdout {
+            let mut stdout: Vec<u8> = vec![];
+            child.stdout
+                .ok_or_else(|| SimpleError::new(format!("Couldn't get a handle to stdout")))?
+                .read_to_end(&mut stdout)
+                .map_err(|e| SimpleError::new(format!("Failed while trying to read stdout: {}", e)))?;
+
+            result.stdout = Some(String::from_utf8_lossy(&stdout).to_string());
+        }
+
+        if self.capture_stderr {
+            let mut stderr: Vec<u8> = vec![];
+            child.stderr
+                .ok_or_else(|| SimpleError::new(format!("Couldn't get a handle to stderr")))?
+                .read_to_end(&mut stderr)
+                .map_err(|e| SimpleError::new(format!("Failed while trying to read stderr: {}", e)))?;
+            result.stderr = Some(String::from_utf8_lossy(&stderr).to_string());
+        }
+
+        Ok(result)
     }
 
-    // I don't know why, but this fixes a random timeout that sometimes breaks
-    // this :-/
-    //println!("");
+    pub fn analyze_code(&self, code: Vec<u8>, harness_path: Option<&str>) -> SimpleResult<MandrakeOutput> {
+        let harness_path = harness_path.unwrap_or(DEFAULT_HARNESS_PATH);
+        if !Path::new(harness_path).exists() {
+            bail!("Could not find the execution harness: {}", harness_path);
+        }
 
-    // Whatever situation we're in, we need to make sure the process is dead
-    // (We discard errors here, because we don't really care if it was already
-    // killed or failed to kill or whatever)
-    match kill(pid) {
-        Ok(_) => (),
-        Err(_) => (),
-    };
+        let child = Command::new(harness_path)
+            .arg(hex::encode(code))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn_ptrace()
+            .map_err(|e| SimpleError::new(format!("Could not execute testing harness: {}", e)))?;
 
-    // If we made it here, grab the stdout + stderr
-    let mut stdout: Vec<u8> = vec![];
-    child.stdout
-        .unwrap_or_else(|| Error::die(&format!("Couldn't get a handle to stdout")))
-        .read_to_end(&mut stdout)
-        .unwrap_or_else(|e| Error::die(&format!("Failed while trying to read stdout: {}", e)));
+        // Get a pid structure
+        let pid = Pid::from_raw(child.id() as i32);
 
-    result.stdout = Some(String::from_utf8_lossy(&stdout).to_string());
+        // Find the first breakpiont
+        cont(pid, None).map_err(|e| SimpleError::new(format!("Couldn't resume execution: {}", e)))?;
+        wait().map_err(|e| SimpleError::new(format!("Failed while waiting for process to resume: {}", e)))?;
 
-    let mut stderr: Vec<u8> = vec![];
-    child.stderr
-        .unwrap_or_else(|| Error::die(&format!("Couldn't get a handle to stderr")))
-        .read_to_end(&mut stderr)
-        .unwrap_or_else(|e| Error::die(&format!("Failed while trying to read stderr: {}", e)));
-    result.stderr = Some(String::from_utf8_lossy(&stderr).to_string());
+        // Step over it - this will perform the call() and move us to the start of
+        // the user's code
+        step(pid, None).map_err(|e| SimpleError::new(format!("Failed to stop into the shellcode: {}", e)))?;
 
-    Ok(result)
+        // At this point, we can proceed to normal analysis
+        self.go(child)
+    }
+
+    pub fn analyze_elf(&self, binary_path: &str) -> SimpleResult<MandrakeOutput> {
+        // This spawns the process and calls waitpid(), so it reaches the first
+        // system call (execve)
+        let child = Command::new(binary_path)
+            //.arg(&temp_file)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn_ptrace()
+            .map_err(|e| SimpleError::new(format!("Could not execute testing harness: {}", e)))?;
+
+        // Find the first breakpiont
+        let pid = Pid::from_raw(child.id() as i32);
+        cont(pid, None)
+            .map_err(|e| SimpleError::new(format!("Couldn't resume execution: {}", e)))?;
+
+        self.go(child)
+    }
 }
-
