@@ -1,23 +1,48 @@
 #![allow(dead_code)]
 
-use std::env;
-use std::process::exit;
+use simple_error::SimpleError;
+
+use clap::{App, Arg};
 
 // Import from the library
 use mandrake::*;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    // Get the code, passed in as an argument
-//if args.len() != 2 {
-//    println!("Usage: {} <binary>", args[0]);
-//    exit(1);
-//}
+    let matches = App::new("Mandrake CLI")
+                           .version("1.0")
+                           .author("Ron Bowes <ron@counterhack.com>")
+                           .about("Executes and instruments executables or raw machine code")
+                           .arg(Arg::with_name("code")
+                                .short("C")
+                                .long("code")
+                                .value_name("HEX")
+                                .help("Hex-encoded machine code to execute")
+                                .takes_value(true))
+                           .arg(Arg::with_name("elf")
+                                .short("E")
+                                .long("elf")
+                                .value_name("ELF_FILE")
+                                .help("ELF binary to execute")
+                                .takes_value(true))
+                           .get_matches();
 
     let mandrake = Mandrake::new();
-    //let out = mandrake.analyze_elf(&args[1]).unwrap();
-    let out = mandrake.analyze_code(b"\xe8\x0c\x00\x00\x00\x2f\x65\x74\x63\x2f\x70\x61\x73\x73\x77\x64\x00\xb8\x02\x00\x00\x00\x5f\xbe\x00\x00\x00\x00\xba\x00\x00\x00\x00\x0f\x05\x48\x89\xc7\xb8\x00\x00\x00\x00\x48\x89\xe6\xba\x64\x00\x00\x00\x0f\x05\x48\x89\xc2\xb8\x01\x00\x00\x00\xbf\x01\x00\x00\x00\x48\x89\xe6\x0f\x05\xb8\x3c\x00\x00\x00\xbf\x00\x00\x00\x00\x0f\x05".to_vec(), None).unwrap();
 
-    println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    let result = match (matches.value_of("code"), matches.value_of("elf")) {
+        (None,       Some(elf)) => mandrake.analyze_elf(elf),
+        (Some(code), None)      => {
+            match hex::decode(code) {
+                Ok(code) => mandrake.analyze_code(code, None),
+                Err(e) => Err(SimpleError::from(e)),
+            }
+        },
+        (None,       None)      => Err(SimpleError::new("Please specify -C <code> or -E <elf>!")),
+        (Some(_),    Some(_))   => Err(SimpleError::new("Please specify -C <code> OR -E <elf>!")),
+    };
+
+    match result {
+        Ok(r)  => println!("{}", serde_json::to_string_pretty(&r).unwrap()),
+        Err(e) => eprintln!("Execution failed: {}", e.to_string()),
+    };
+
 }

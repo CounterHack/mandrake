@@ -38,7 +38,7 @@ impl AnalyzedValue {
 impl fmt::Display for AnalyzedValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Constant(c) => write!(f, "0x{}", c),
+            Self::Constant(c) => write!(f, "0x{:x}", c),
             Self::Pointer(p) => write!(f, "{}", p.to_string()),
         }
     }
