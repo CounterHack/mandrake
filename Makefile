@@ -10,5 +10,7 @@ indocker:
 	chown -R ${UID}:${GID} .
 	strip target/release/mandrake
 
+	cd harness && make
+
 clean:
 	rm -f target
