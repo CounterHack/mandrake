@@ -14,7 +14,7 @@ use spawn_ptrace::CommandPtraceSpawn;
 mod analyzed_value;
 use analyzed_value::*;
 
-pub const DEFAULT_SNIPPIT_LENGTH: u64 = 32;
+pub const DEFAULT_SNIPPIT_LENGTH: u64 = 64;
 pub const DEFAULT_MINIMUM_VIABLE_STRING: u64 = 6;
 pub const DEFAULT_HARNESS_PATH: &'static str = "./harness/harness";
 
@@ -215,9 +215,9 @@ impl Mandrake {
         Ok(result)
     }
 
-    pub fn analyze_code(&self, code: Vec<u8>, harness_path: Option<&str>) -> SimpleResult<MandrakeOutput> {
-        let harness_path = harness_path.unwrap_or(DEFAULT_HARNESS_PATH);
-        if !Path::new(harness_path).exists() {
+    pub fn analyze_code(&self, code: Vec<u8>, harness_path: Option<String>) -> SimpleResult<MandrakeOutput> {
+        let harness_path = harness_path.unwrap_or(DEFAULT_HARNESS_PATH.to_string());
+        if !Path::new(&harness_path).exists() {
             bail!("Could not find the execution harness: {}", harness_path);
         }
 
