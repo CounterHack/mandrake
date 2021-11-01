@@ -243,14 +243,18 @@ impl Mandrake {
         self.go(child)
     }
 
-    pub fn analyze_elf(&self, binary_path: &str) -> SimpleResult<MandrakeOutput> {
+    pub fn analyze_elf(&self, binary_path: &str, args: Vec<&str>) -> SimpleResult<MandrakeOutput> {
         // This spawns the process and calls waitpid(), so it reaches the first
         // system call (execve)
-        let child = Command::new(binary_path)
-            //.arg(&temp_file)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn_ptrace()
+        let mut command = Command::new(binary_path);
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+
+        for arg in args {
+            command.arg(arg);
+        }
+
+        let child = command.spawn_ptrace()
             .map_err(|e| SimpleError::new(format!("Could not execute testing harness: {}", e)))?;
 
         // Find the first breakpiont

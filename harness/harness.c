@@ -37,7 +37,8 @@ int main(int argc, char *argv[]){
       "int 0x03\n"
 
       // rax (exit code) is already set to the value returned by the code
-      "mov rdi, 0\n"
+      "mov rdi, rax\n" // Set rdi (exit_code) to whatever the function returned
+      "mov rax, 60\n" // Set the syscall to 60 (sys_exit)
       "syscall\n"
       : :"r"(a));
 }
