@@ -8,49 +8,16 @@ use nix::unistd::Pid;
 use serde::{Serialize, Deserialize};
 use simple_error::{bail, SimpleResult};
 
-const SNIPPIT_LENGTH: u64 = 32;
+const SNIPPIT_LENGTH: u64 = 64;
 const MINIMUM_VIABLE_STRING: usize = 6;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum AnalyzedValue {
-    Constant(u64),
-    Pointer(Pointer),
-}
-
-impl AnalyzedValue {
-    // is_instruction will truncate the data to exactly the length of a single instruction (if possible)
-    pub fn new(pid: Pid, value: u64, is_instruction: bool) -> Self {
-        // Try and get a pointer
-        match Pointer::from_memory(pid, value, is_instruction) {
-            Some(p) => AnalyzedValue::Pointer(p),
-            None => AnalyzedValue::Constant(value),
-        }
-    }
-
-    pub fn value(&self) -> u64 {
-        match self {
-            Self::Constant(v) => *v,
-            Self::Pointer(p) => p.value,
-        }
-    }
-}
-
-impl fmt::Display for AnalyzedValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Constant(c) => write!(f, "0x{:x}", c),
-            Self::Pointer(p) => write!(f, "{}", p.to_string()),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Pointer {
+pub struct AnalyzedValue {
     // The value
     pub value: u64,
 
     // The memory as a stream of bytes
-    pub memory: Vec<u8>,
+    pub memory: Option<Vec<u8>>,
 
     // The decoded instruction, if possible
     pub as_instruction: Option<String>,
@@ -59,11 +26,10 @@ pub struct Pointer {
     pub as_string: Option<String>,
 }
 
-impl Pointer {
-    fn from_memory(pid: Pid, addr: u64, exactly_one_instruction: bool) -> Option<Self> {
+impl AnalyzedValue {
+    fn get_memory(pid: Pid, addr: u64) -> Option<Vec<u8>> {
         let mut data: Vec<u8> = vec![];
 
-        // This reads just enough data to get the proper length
         for i in 0..((SNIPPIT_LENGTH + 7) / 8) {
             let this_chunk = match read(pid, (addr + (i * 8)) as AddressType) {
                 Ok(chunk) => chunk,
@@ -75,17 +41,33 @@ impl Pointer {
             data.write_i64::<LittleEndian>(this_chunk).unwrap();
         }
 
+        Some(data)
+    }
+
+    fn new(pid: Pid, value: u64, is_instruction_pointer: bool) -> Self {
+        let mut data = match Self::get_memory(pid, value) {
+            Some(data) => data,
+            None => {
+                return AnalyzedValue {
+                    value: value,
+                    memory: None,
+                    as_instruction: None,
+                    as_string: None,
+                };
+            }
+        };
+
         // Truncate it to the actual size they asked for
         data.truncate(SNIPPIT_LENGTH as usize);
 
         // Try and decode from assembly
-        let mut decoder = Decoder::with_ip(64, &data, addr as u64, DecoderOptions::NONE);
+        let mut decoder = Decoder::with_ip(64, &data, value as u64, DecoderOptions::NONE);
         let as_instruction = match decoder.can_decode() {
             true => {
                 let mut output = String::new();
                 let decoded = decoder.decode();
 
-                if exactly_one_instruction {
+                if is_instruction_pointer {
                     data.truncate(decoded.len());
                 }
                 NasmFormatter::new().format(&decoded, &mut output);
@@ -112,32 +94,18 @@ impl Pointer {
             Err(_) => None,
         };
 
-        Some(Pointer {
-            value: addr,
-            memory: Vec::new(),//data,
+        Self {
+            value: value,
+            memory: Some(data),
             as_instruction: as_instruction,
             as_string: as_string,
-        })
+        }
     }
 }
 
-impl fmt::Display for Pointer {
+impl fmt::Display for AnalyzedValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let data: Vec<String> = self.memory.iter().map(|b| format!("{:02x}", b)).collect();
-
-        write!(f, "0x{:08x}", self.value)?;
-
-        write!(f, "{}", data.join(" "))?;
-
-        if let Some(s) = &self.as_string {
-            write!(f, " (\"{}\")", s)?;
-        }
-
-        if let Some(i) = &self.as_instruction {
-            write!(f, " ({})", i)?;
-        }
-
-        Ok(())
+        write!(f, "0x{:08x}", self.value)
     }
 }
 

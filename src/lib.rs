@@ -14,7 +14,7 @@ use spawn_ptrace::CommandPtraceSpawn;
 mod analyzed_value;
 use analyzed_value::*;
 
-pub const DEFAULT_SNIPPIT_LENGTH: u64 = 64;
+// pub const DEFAULT_SNIPPIT_LENGTH: u64 = 64;
 pub const DEFAULT_MINIMUM_VIABLE_STRING: u64 = 6;
 pub const DEFAULT_HARNESS_PATH: &'static str = "./harness/harness";
 
@@ -50,7 +50,7 @@ impl MandrakeOutput {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Mandrake {
-    snippit_length: u64,
+    // snippit_length: u64,
     minimum_viable_string: u64,
     hidden_address: Option<u64>,
     hidden_mask: Option<u64>,
@@ -64,7 +64,7 @@ pub struct Mandrake {
 impl Mandrake {
     pub fn new() -> Self {
         Mandrake {
-            snippit_length: DEFAULT_SNIPPIT_LENGTH,
+            // snippit_length: DEFAULT_SNIPPIT_LENGTH,
             minimum_viable_string: DEFAULT_MINIMUM_VIABLE_STRING,
             visible_address: None,
             visible_mask: None,
@@ -117,24 +117,22 @@ impl Mandrake {
                                 .map_err(|e| SimpleError::new(&format!("Couldn't step through code: {}", e)))?;
 
                             // If we get an int3, it means we want to stop logging (ie, continue)
-                            if let AnalyzedValue::Pointer(pointer) = &rip {
-                                if let Some(instruction) = &pointer.as_instruction {
-                                    if instruction == "int3" {
-                                        // Waiting for the step() to finish before continuing is important
-                                        wait()
-                                            .map_err(|e| SimpleError::new(&format!("Couldn't step over breakpoint: {}", e)))?;
+                            if let Some(instruction) = &rip.as_instruction {
+                                if instruction == "int3" {
+                                    // Waiting for the step() to finish before continuing is important
+                                    wait()
+                                        .map_err(|e| SimpleError::new(&format!("Couldn't step over breakpoint: {}", e)))?;
 
-                                        cont(pid, None)
-                                            .map_err(|e| SimpleError::new(&format!("Couldn't resume execution after breakpoint: {}", e)))?;
-                                        continue;
-                                    }
+                                    cont(pid, None)
+                                        .map_err(|e| SimpleError::new(&format!("Couldn't resume execution after breakpoint: {}", e)))?;
+                                    continue;
                                 }
                             }
 
                             // Suppress addresses that match the hidden_address / hidden_mask, if set
                             if let Some(hidden_address) = self.hidden_address {
                                 if let Some(hidden_mask) = self.hidden_mask {
-                                    if (rip.value() & hidden_mask) == hidden_address {
+                                    if (rip.value & hidden_mask) == hidden_address {
                                         continue;
                                     }
                                 }
@@ -143,7 +141,7 @@ impl Mandrake {
                             // Suppress addresses that don't match the visible_address / visible_mask
                             if let Some(visible_address) = self.visible_address {
                                 if let Some(visible_mask) = self.visible_mask {
-                                    if (rip.value() & visible_mask) != visible_address {
+                                    if (rip.value & visible_mask) != visible_address {
                                         continue;
                                     }
                                 }
