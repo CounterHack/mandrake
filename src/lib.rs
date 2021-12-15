@@ -18,6 +18,9 @@ use analyzed_value::*;
 pub const DEFAULT_MINIMUM_VIABLE_STRING: u64 = 6;
 pub const DEFAULT_HARNESS_PATH: &'static str = "./harness/harness";
 
+// The cap on how many instructions we can run
+pub const MAX_INSTRUCTIONS: usize = 128;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MandrakeOutput {
     success: bool, // Will always be true
@@ -56,7 +59,7 @@ pub struct Mandrake {
     hidden_mask: Option<u64>,
     visible_address: Option<u64>,
     visible_mask: Option<u64>,
-    max_logged_instructions: Option<u64>,
+    max_logged_instructions: Option<usize>,
     capture_stdout: bool,
     capture_stderr: bool,
 }
@@ -70,7 +73,7 @@ impl Mandrake {
             visible_mask: None,
             hidden_address: None,
             hidden_mask: None,
-            max_logged_instructions: None,
+            max_logged_instructions: Some(MAX_INSTRUCTIONS),
             capture_stdout: true,
             capture_stderr: true,
         }
@@ -149,6 +152,13 @@ impl Mandrake {
 
                             result.history.push(regs);
 
+                            if let Some(max_instructions) = self.max_logged_instructions {
+                                if result.history.len() > max_instructions {
+                                    result.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", max_instructions));
+                                    break;
+                                }
+                            }
+
                             continue;
                         },
 
@@ -171,16 +181,11 @@ impl Mandrake {
                 Ok(s) => bail!("Unexpected stop reason: {:?}", s),
                 Err(e) => bail!("Unexpected wait() error: {:?}", e),
             };
-
-    //if state.history.len() > MAX_INSTRUCTIONS {
-    //    state.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", MAX_INSTRUCTIONS));
-    //    break;
-    //}
         }
 
         // I don't know why, but this fixes a random timeout that sometimes breaks
         // this :-/
-        //println!("");
+        println!("");
 
         // Whatever situation we're in, we need to make sure the process is dead
         // (We discard errors here, because we don't really care if it was already
