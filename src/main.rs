@@ -1,13 +1,43 @@
 #![allow(dead_code)]
 
+use std::fmt;
 use std::path::Path;
+use std::str::FromStr;
 
-use simple_error::{SimpleResult, SimpleError};
+use simple_error::{SimpleResult, SimpleError, bail};
 use clap::Parser;
 use clap_num::maybe_hex;
 
 // Import from the library
 use mandrake::mandrake::Mandrake;
+
+#[derive(Debug)]
+enum OutputFormat {
+    JSON,
+    YAML,
+}
+
+impl FromStr for OutputFormat {
+    type Err = SimpleError;
+
+    fn from_str(input: &str) -> Result<OutputFormat, Self::Err> {
+        match &input.to_lowercase()[..] {
+            "json"  => Ok(OutputFormat::JSON),
+            "yaml"  => Ok(OutputFormat::YAML),
+            _       => bail!("Unknown format: {}", input),
+        }
+    }
+}
+
+impl fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::JSON => write!(f, "JSON"),
+            Self::YAML => write!(f, "YAML"),
+        }
+    }
+}
+
 
 #[derive(Parser, Debug)]
 struct Elf {
@@ -37,6 +67,10 @@ enum Action {
 #[derive(Parser, Debug)]
 #[clap(about, version, author)]
 struct Args {
+    /// The output format (JSON or YAML)
+    #[clap(short, long, default_value_t = OutputFormat::JSON)]
+    output_format: OutputFormat,
+
     /// The amount of context memory to read
     #[clap(short, long, default_value_t = 64, parse(try_from_str=maybe_hex))]
     snippit_length: usize,
@@ -105,7 +139,10 @@ fn main() -> SimpleResult<()> {
     };
 
     match result {
-        Ok(r)  => println!("{}", serde_json::to_string_pretty(&r).unwrap()),
+        Ok(r)  => match args.output_format {
+            OutputFormat::JSON => println!("{}", serde_json::to_string_pretty(&r).unwrap()),
+            OutputFormat::YAML => println!("{}", serde_yaml::to_string(&r).unwrap()),
+        },
         Err(e) => eprintln!("Execution failed: {}", e.to_string()),
     };
 
