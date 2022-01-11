@@ -1,86 +1,107 @@
 #![allow(dead_code)]
 
-use std::env;
-use std::process;
+use std::path::Path;
 
 use simple_error::{SimpleResult, SimpleError};
-use clap::{App, Arg, AppSettings};
+use clap::Parser;
+use clap_num::maybe_hex;
 
 // Import from the library
-use mandrake::*;
+use mandrake::mandrake::Mandrake;
 
-fn handle_code(mandrake: &Mandrake, code: &str) -> SimpleResult<MandrakeOutput> {
-    let harness = env::var("HARNESS").ok();
+#[derive(Parser, Debug)]
+struct Elf {
+    /// The ELF executable
+    elf: String,
 
-    match hex::decode(code) {
-        Ok(code) => mandrake.analyze_code(code, harness),
-        Err(e) => Err(SimpleError::from(e)),
-    }
+    /// The argument(s) to pass to the ELF executable
+    args: Vec<String>,
 }
 
-fn handle_elf(mandrake: &Mandrake, elf: &str, args: Vec<&str>) -> SimpleResult<MandrakeOutput> {
-    mandrake.analyze_elf(elf, args)
+#[derive(Parser, Debug)]
+struct Code {
+    /// The code, as a hex string (eg: "4831C0C3")
+    code: String,
+
+    /// The path to the required harness
+    #[clap(long, default_value_t = String::from("./harness/harness"))]
+    harness: String,
 }
 
-fn main() {
-    let matches = App::new("Mandrake CLI")
-                           .version("1.0")
-                           .author("Ron Bowes <ron@counterhack.com>")
-                           .about("Executes and instruments executables or raw machine code")
+#[derive(clap::Subcommand, Debug)]
+enum Action {
+    Elf(Elf),
+    Code(Code),
+}
 
-                           // Must use a subcommand
-                           .setting(AppSettings::SubcommandRequiredElseHelp)
-                           .subcommand(App::new("code")
-                                       .about("Run code (encoded as hex)")
-                                       .arg(Arg::with_name("CODE")
-                                           .help("The code to execute, as a hex string")
-                                           .required(true)
-                                           .index(1)
-                                       )
-                           )
+#[derive(Parser, Debug)]
+#[clap(about, version, author)]
+struct Args {
+    /// The amount of context memory to read
+    #[clap(short, long, default_value_t = 64, parse(try_from_str=maybe_hex))]
+    snippit_length: usize,
 
-                           .subcommand(App::new("elf")
-                                       .about("Run an ELF binary")
-                                       .arg(Arg::with_name("ELF")
-                                           .help("The binary to execute")
-                                           .required(true)
-                                           .index(1)
-                                       )
-                                       .arg(Arg::with_name("arg")
-                                           .short("a")
-                                           .long("arg")
-                                           .help("An argument to pass to the binary (can have multiple)")
-                                           .takes_value(true)
-                                           .multiple(true)
-                                       )
-                           )
+    /// The number of consecutive ASCII bytes to be considered a string
+    #[clap(short, long, default_value_t = 6, parse(try_from_str=maybe_hex))]
+    minimum_viable_string: usize,
 
-                           .get_matches();
+    /// The maximum number of instructions to read before stopping (to prevent infinite loops)
+    #[clap(short='i', long, default_value_t = 128, parse(try_from_str=maybe_hex))]
+    max_instructions: usize,
 
-    let mandrake = Mandrake::new();
+    /// Don't log addresses with this prefix (eg, 0x13370000)
+    #[clap(long, parse(try_from_str=maybe_hex))]
+    hidden_address: Option<u64>,
 
-    let result = if let Some(matches) = matches.subcommand_matches("code") {
-        handle_code(&mandrake, matches.value_of("CODE").unwrap_or_else(|| {
-            eprintln!("Code missing");
-            process::exit(1);
-        }))
+    /// The mask to apply before checking --hidden-address (eg, 0xFFFF0000)
+    #[clap(long, parse(try_from_str=maybe_hex))]
+    hidden_mask: Option<u64>,
 
-    } else if let Some(matches) = matches.subcommand_matches("elf") {
-        println!("{:?}", matches);
+    /// Only log addresses in this range (unless they're hidden)
+    #[clap(long, parse(try_from_str=maybe_hex))]
+    visible_address: Option<u64>,
 
-        let args: Vec<&str> = match matches.values_of("arg") {
-            Some(a) => a.collect(),
-            None => vec![],
-        };
+    /// The mask to apply before checking --visible-address (eg, 0xFFFF0000)
+    #[clap(long, parse(try_from_str=maybe_hex))]
+    visible_mask: Option<u64>,
 
-        handle_elf(&mandrake, matches.value_of("ELF").unwrap_or_else(|| {
-            eprintln!("ELF path missing");
-            process::exit(1);
-        }), args)
+    #[clap(long)]
+    ignore_stdout: bool,
 
-    } else {
-        eprintln!("No valid subcommand found - run with `elf` or `code`!");
-        process::exit(1);
+    #[clap(long)]
+    ignore_stderr: bool,
+
+    #[clap(subcommand)]
+    action: Action,
+}
+
+fn main() -> SimpleResult<()> {
+    let args = Args::parse();
+
+    println!("{:?}", args);
+
+    let mandrake = Mandrake::new(
+        args.snippit_length,
+        args.minimum_viable_string,
+        Some(args.max_instructions),
+        args.hidden_address,
+        args.hidden_mask,
+        args.visible_address,
+        args.visible_mask,
+        args.ignore_stdout,
+        args.ignore_stderr
+    );
+
+    let result = match args.action {
+        Action::Code(code_args) => {
+            match hex::decode(code_args.code) {
+                Ok(code) => mandrake.analyze_code(code, &Path::new(&code_args.harness)),
+                Err(e) => Err(SimpleError::new(format!("Could not decode hex: {}", e))),
+            }
+        },
+        Action::Elf(elf_args) => {
+            mandrake.analyze_elf(&Path::new(&elf_args.elf), vec![])
+        },
     };
 
     match result {
@@ -88,4 +109,5 @@ fn main() {
         Err(e) => eprintln!("Execution failed: {}", e.to_string()),
     };
 
+    Ok(())
 }

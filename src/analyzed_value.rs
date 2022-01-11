@@ -1,15 +1,10 @@
 use std::fmt;
-use std::collections::HashMap;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 use iced_x86::{Decoder, DecoderOptions, Formatter, NasmFormatter};
-use nix::sys::ptrace::{getregs, read, AddressType};
+use nix::sys::ptrace::{read, AddressType};
 use nix::unistd::Pid;
 use serde::{Serialize, Deserialize};
-use simple_error::{bail, SimpleResult};
-
-const SNIPPIT_LENGTH: u64 = 64;
-const MINIMUM_VIABLE_STRING: usize = 6;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AnalyzedValue {
@@ -27,27 +22,11 @@ pub struct AnalyzedValue {
 }
 
 impl AnalyzedValue {
-    fn get_memory(pid: Pid, addr: u64) -> Option<Vec<u8>> {
-        let mut data: Vec<u8> = vec![];
-
-        for i in 0..((SNIPPIT_LENGTH + 7) / 8) {
-            let this_chunk = match read(pid, (addr + (i * 8)) as AddressType) {
-                Ok(chunk) => chunk,
-                // If the memory isn't readable, just return None
-                Err(_e) => return None,
-            };
-
-            // I don't think this can actually fail
-            data.write_i64::<LittleEndian>(this_chunk).unwrap();
-        }
-
-        Some(data)
-    }
-
-    fn new(pid: Pid, value: u64, is_instruction_pointer: bool) -> Self {
-        let mut data = match Self::get_memory(pid, value) {
+    pub fn new(pid: Pid, value: u64, is_instruction_pointer: bool, snippit_length: usize, minimum_viable_string: usize) -> Self {
+        let mut data = match Self::get_memory(pid, value, snippit_length) {
             Some(data) => data,
             None => {
+                // If we can't get memory, just return the value
                 return AnalyzedValue {
                     value: value,
                     memory: None,
@@ -58,7 +37,7 @@ impl AnalyzedValue {
         };
 
         // Truncate it to the actual size they asked for
-        data.truncate(SNIPPIT_LENGTH as usize);
+        data.truncate(snippit_length as usize);
 
         // Try and decode from assembly
         let mut decoder = Decoder::with_ip(64, &data, value as u64, DecoderOptions::NONE);
@@ -85,7 +64,7 @@ impl AnalyzedValue {
         let string_data: Vec<u8> = data.clone().into_iter().take_while(|d| *d != 0).collect();
         let as_string = match std::str::from_utf8(&string_data) {
             Ok(s)  => {
-                if s.len() > MINIMUM_VIABLE_STRING {
+                if s.len() > minimum_viable_string {
                     Some(s.to_string())
                 } else {
                     None
@@ -101,6 +80,24 @@ impl AnalyzedValue {
             as_string: as_string,
         }
     }
+
+    fn get_memory(pid: Pid, addr: u64, snippit_length: usize) -> Option<Vec<u8>> {
+        let mut data: Vec<u8> = vec![];
+
+        for i in 0..((snippit_length + 7) / 8) {
+            let this_chunk = match read(pid, (addr as usize + (i * 8)) as AddressType) {
+                Ok(chunk) => chunk,
+                // If the memory isn't readable, just return None
+                Err(_e) => return None,
+            };
+
+            // I don't think this can actually fail
+            data.write_i64::<LittleEndian>(this_chunk).unwrap();
+        }
+
+        Some(data)
+    }
+
 }
 
 impl fmt::Display for AnalyzedValue {
@@ -109,23 +106,3 @@ impl fmt::Display for AnalyzedValue {
     }
 }
 
-pub fn get_registers_from_pid(pid: Pid) -> SimpleResult<HashMap<String, AnalyzedValue>> {
-    // Try and get the registers
-    let regs = match getregs(pid) {
-        Ok(r) => r,
-        Err(e) => bail!("Couldn't read registers: {}", e),
-    };
-
-    // Analyze and save each one
-    Ok(vec![
-        ("rip".to_string(), AnalyzedValue::new(pid, regs.rip, true)),
-        ("rax".to_string(), AnalyzedValue::new(pid, regs.rax, false)),
-        ("rbx".to_string(), AnalyzedValue::new(pid, regs.rbx, false)),
-        ("rcx".to_string(), AnalyzedValue::new(pid, regs.rcx, false)),
-        ("rdx".to_string(), AnalyzedValue::new(pid, regs.rdx, false)),
-        ("rsi".to_string(), AnalyzedValue::new(pid, regs.rsi, false)),
-        ("rdi".to_string(), AnalyzedValue::new(pid, regs.rdi, false)),
-        ("rbp".to_string(), AnalyzedValue::new(pid, regs.rbp, false)),
-        ("rsp".to_string(), AnalyzedValue::new(pid, regs.rsp, false)),
-    ].into_iter().collect())
-}
