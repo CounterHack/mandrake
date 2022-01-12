@@ -30,21 +30,25 @@ Later, we'll need to publish properly on `cargo`.
 
 # Usage
 
+To use this, the simplest way is to check out the source, install the Rust
+build environment (ie, `cargo`), and just use it right from the source tree.
+So far, we haven't really done any fancy releases.
+
 `mandrake` has two modes, implemented as subcommnds - either `code` or `elf`.
 You can run it with `--help` to see the full options, including for the
 subcommands:
 
 ```
-$ ./mandrake --help
-$ ./mandrake code --help
-$ ./mandrake elf --help
+$ cargo run -- --help
+$ cargo run -- code --help
+$ cargo run -- elf --help
 ```
 
-## Code Mode
+## Analyzing Raw Code
 
 To use `mandrake` to analyze raw machine code, you need two things:
 
-* The `harness` executable - available on Github
+* The `harness` executable - you'll get this when you check out the codebase, but you can also get it [directly from Github](https://github.com/CounterHack/mandrake/blob/main/harness/harness)
 * The hex-encoded machine code
 
 How you get hex-encoded machine code is sort of up to you, but if you want
@@ -162,7 +166,7 @@ $ cargo run -- --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7
   "exit_code": 12
 ```
 
-## Elf mode
+## Analyzing Elf Files
 
 In addition to raw shellcode, we can also instrument an ELF (Linux) binary! We
 haven't used ELF binaries as much as shellcode, so this isn't as well tested
@@ -280,7 +284,7 @@ want to!
 The best you can do is probably to turn off ASLR, then filter down to simply
 the binary you want to see. Here's how I do that:
 
-To do that, ensure your binary is compiled with --no-pie, then turn off ASLR,
+To do that, ensure your binary is compiled with `--no-pie`, then turn off ASLR,
 execute it, and have a look at the starting address:
 
 ```
