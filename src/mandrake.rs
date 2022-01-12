@@ -13,37 +13,29 @@ use spawn_ptrace::CommandPtraceSpawn;
 
 use crate::analyzed_value::AnalyzedValue;
 use crate::mandrake_output::MandrakeOutput;
+use crate::visibility_configuration::VisibilityConfiguration;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Mandrake {
     snippit_length:          usize,
     minimum_viable_string:   usize,
     max_logged_instructions: Option<usize>,
-    hidden_address:          Option<u64>,
-    hidden_mask:             Option<u64>,
-    visible_address:         Option<u64>,
-    visible_mask:            Option<u64>,
     capture_stdout:          bool,
     capture_stderr:          bool,
 }
 
-
 impl Mandrake {
-    pub fn new(snippit_length: usize, minimum_viable_string: usize, max_logged_instructions: Option<usize>, hidden_address: Option<u64>, hidden_mask: Option<u64>, visible_address: Option<u64>, visible_mask: Option<u64>, ignore_stdout: bool, ignore_stderr: bool) -> Self {
+    pub fn new(snippit_length: usize, minimum_viable_string: usize, max_logged_instructions: Option<usize>, ignore_stdout: bool, ignore_stderr: bool) -> Self {
         Self {
             snippit_length:          snippit_length,
             minimum_viable_string:   minimum_viable_string,
             max_logged_instructions: max_logged_instructions,
-            hidden_address:          hidden_address,
-            hidden_mask:             hidden_mask,
-            visible_address:         visible_address,
-            visible_mask:            visible_mask,
             capture_stdout:          !ignore_stdout,
             capture_stderr:          !ignore_stderr,
         }
     }
 
-    fn go(&self, child: Child) -> SimpleResult<MandrakeOutput> {
+    fn go(&self, child: Child, visibility: &VisibilityConfiguration) -> SimpleResult<MandrakeOutput> {
         // Build a state then loop, one instruction at a time, till this ends
         let mut result = MandrakeOutput::new(child.id());
         let pid = Pid::from_raw(child.id() as i32);
@@ -86,22 +78,9 @@ impl Mandrake {
                                 }
                             }
 
-                            // Suppress addresses that match the hidden_address / hidden_mask, if set
-                            if let Some(hidden_address) = self.hidden_address {
-                                if let Some(hidden_mask) = self.hidden_mask {
-                                    if (rip.value & hidden_mask) == hidden_address {
-                                        continue;
-                                    }
-                                }
-                            }
-
-                            // Suppress addresses that don't match the visible_address / visible_mask
-                            if let Some(visible_address) = self.visible_address {
-                                if let Some(visible_mask) = self.visible_mask {
-                                    if (rip.value & visible_mask) != visible_address {
-                                        continue;
-                                    }
-                                }
+                            // Check if we're supposed to see this
+                            if !visibility.is_visible(rip.value) {
+                                continue;
                             }
 
                             result.history.push(regs);
@@ -217,10 +196,10 @@ impl Mandrake {
         step(pid, None).map_err(|e| SimpleError::new(format!("Failed to stop into the shellcode: {}", e)))?;
 
         // At this point, we can proceed to normal analysis
-        self.go(child)
+        self.go(child, &VisibilityConfiguration::harness_visibility())
     }
 
-    pub fn analyze_elf(&self, binary: &Path, args: Vec<String>) -> SimpleResult<MandrakeOutput> {
+    pub fn analyze_elf(&self, binary: &Path, args: Vec<String>, visibility: &VisibilityConfiguration) -> SimpleResult<MandrakeOutput> {
         // This spawns the process and calls waitpid(), so it reaches the first
         // system call (execve)
         let mut command = Command::new(binary);
@@ -239,6 +218,6 @@ impl Mandrake {
         cont(pid, None)
             .map_err(|e| SimpleError::new(format!("Couldn't resume execution: {}", e)))?;
 
-        self.go(child)
+        self.go(child, visibility)
     }
 }

@@ -11,6 +11,8 @@ int main(int argc, char *argv[]){
     exit(1);
   }
 
+  // Note: It's important that this uses 0x13370000 * 0xFFFF0000, because
+  // The `mandrake` binary requires that
   unsigned char *a = mmap((void*)0x13370000, strlen(argv[1]) / 2, PROT_EXEC |PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
   int i;
   for(i = 0; i < strlen(argv[1]); i += 2) {

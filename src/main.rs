@@ -10,6 +10,7 @@ use clap_num::maybe_hex;
 
 // Import from the library
 use mandrake::mandrake::Mandrake;
+use mandrake::visibility_configuration::VisibilityConfiguration;
 
 #[derive(Debug)]
 enum OutputFormat {
@@ -41,6 +42,9 @@ impl fmt::Display for OutputFormat {
 
 #[derive(Parser, Debug)]
 struct Elf {
+    #[clap(flatten)]
+    visibility_configuration: VisibilityConfiguration,
+
     /// The ELF executable
     elf: String,
 
@@ -83,22 +87,6 @@ struct Args {
     #[clap(short='i', long, default_value_t = 128, parse(try_from_str=maybe_hex))]
     max_instructions: usize,
 
-    /// Don't log addresses with this prefix (eg, 0x13370000)
-    #[clap(long, parse(try_from_str=maybe_hex))]
-    hidden_address: Option<u64>,
-
-    /// The mask to apply before checking --hidden-address (eg, 0xFFFF0000)
-    #[clap(long, parse(try_from_str=maybe_hex))]
-    hidden_mask: Option<u64>,
-
-    /// Only log addresses in this range (unless they're hidden)
-    #[clap(long, parse(try_from_str=maybe_hex))]
-    visible_address: Option<u64>,
-
-    /// The mask to apply before checking --visible-address (eg, 0xFFFF0000)
-    #[clap(long, parse(try_from_str=maybe_hex))]
-    visible_mask: Option<u64>,
-
     #[clap(long)]
     ignore_stdout: bool,
 
@@ -118,10 +106,6 @@ fn main() -> SimpleResult<()> {
         args.snippit_length,
         args.minimum_viable_string,
         Some(args.max_instructions),
-        args.hidden_address,
-        args.hidden_mask,
-        args.visible_address,
-        args.visible_mask,
         args.ignore_stdout,
         args.ignore_stderr
     );
@@ -134,7 +118,7 @@ fn main() -> SimpleResult<()> {
             }
         },
         Action::Elf(elf_args) => {
-            mandrake.analyze_elf(&Path::new(&elf_args.elf), vec![])
+            mandrake.analyze_elf(&Path::new(&elf_args.elf), elf_args.args, &elf_args.visibility_configuration)
         },
     };
 

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde::{Serialize, Deserialize};
 
-use crate::AnalyzedValue;
+use crate::analyzed_value::AnalyzedValue;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MandrakeOutput {
