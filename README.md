@@ -26,11 +26,13 @@ what actually ran.
 That means that packed, self-modified, and looping code can be analyzed much
 more easily, since you'll see very clearly which syscalls are being performed!
 
-# Install
+*Warning: This DOES run the code on your machine, using Ptrace. You probably don't want to analyze malicious code!*
 
-Right now, download + build. That's described later.
+# Installation
 
-Later, we'll need to publish on `cargo`.
+Right now, download + build using `cargo`. That's described later.
+
+Later, we'll need to publish properly on `cargo`.
 
 # Usage
 
@@ -43,6 +45,148 @@ $ ./mandrake --help
 $ ./mandrake code --help
 $ ./mandrake elf --help
 ```
+
+## Code Mode
+
+To use `mandrake` to analyze raw machine code, you need two things:
+
+* The `harness` executable - available on Github
+* The hex-encoded machine code
+
+How you get hex-encoded machine code is sort of up to you, but if you want
+something simple to test, try `c3` (`ret`) or `4831c048ffc0c3`
+(`xor rax, rax` / `inc rax` / `ret`) - aka, `return 1`.
+
+You can either run the `mandrake` executable, or use `cargo run --` as shown
+below:
+
+```
+$ cargo run -- --snippit-length 4 code 'c3'
+
+{
+  "success": true,
+  "pid": 1046429,
+  "history": [
+    {
+      "rdx": {
+        "value": 0,
+        "memory": null,
+        "as_instruction": null,
+        "as_string": null
+      },
+      "rip": {
+        "value": 322371584,
+        "memory": [
+          195
+        ],
+        "as_instruction": "ret",
+        "as_string": null
+      },
+[...]
+    }
+  ],
+  "stdout": "",
+  "stderr": "",
+  "exit_reason": "Process exited cleanly with exit code 0",
+  "exit_code": 0
+}
+```
+
+This example also demonstrates how to use a custom path to the `harness`:
+
+```
+$ cargo run -- --snippit-length 4 code --harness=./harness/harness '4831c048ffc0c3'
+
+{
+  "success": true,
+  "pid": 1053809,
+  "history": [
+    {
+      "rbx": {
+        "value": 0,
+        "memory": null,
+        "as_instruction": null,
+        "as_string": null
+      },
+[...]
+"rip": {
+        "value": 322371590,
+        "memory": [
+          195
+        ],
+        "as_instruction": "ret",
+        "as_string": null
+      },
+      "rdi": {
+        "value": 0,
+        "memory": null,
+        "as_instruction": null,
+        "as_string": null
+      }
+    }
+  ],
+  "stdout": "",
+  "stderr": "",
+  "exit_reason": "Process exited cleanly with exit code 1",
+  "exit_code": 1
+}
+```
+
+If the shellcode crashes, that's also fine; this shellcode runs
+`push 0x41414141` / `ret`, which will crash at `0x41414141`:
+
+```
+$ cargo run -- --snippit-length 4 code --harness=./harness/harness '6841414141c3'
+   Compiling mandrake v0.1.0 (/home/ron/counterhack/mandrake)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.92s
+     Running `target/debug/mandrake --snippit-length 4 code --harness=./harness/harness 6841414141c3`
+
+{
+  "success": true,
+  "pid": 1054409,
+  "history": [
+    {
+[...]
+    }
+  ],
+  "stdout": "",
+  "stderr": "",
+  "exit_reason": "Execution crashed with a segmentation fault (SIGSEGV) @ 0x41414141",
+  "exit_code": null
+}
+```
+
+We can also capture `stdout`:
+
+```
+$ cargo run -- --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7c00100000048c7c7010000005e48c7c20c0000000f05c3'
+{                              
+  "success": true,             
+  "pid": 1055334,        
+  "history": [                 
+[...]
+  ],
+  "stdout": "Hello World!",
+  "stderr": "",
+  "exit_reason": "Process exited cleanly with exit code 12",
+  "exit_code": 12
+```
+
+## Elf mode
+
+In addition to raw shellcode, we can also instrument an ELF (Linux) binary! We
+haven't used ELF binaries as much as shellcode, so 
+
+## What do I do with All That JSON?
+
+Well, you can also output with `--output-format=YAML`. :)
+
+We can actually support any type that [Serde](https://serde.rs/) supports,
+please file a bug or send a patch if you'd like Pickle or something.
+
+But to answer the question.. I dunno! At Counter Hack, we wrapped a web
+interface around it to teach shellcoding. I bet there are a lot more cool
+things you can do, though, use your imagination!
 
 # Build
 
@@ -98,10 +242,6 @@ make[1]: Nothing to be done for 'all'.
 make[1]: Leaving directory '/src/harness'
 ```
 
-# Execute
-
-# How to use it effectively
-
 # How it works
 
 # Appendix: Usage
@@ -109,89 +249,3 @@ make[1]: Leaving directory '/src/harness'
 This is just the output of `--help`. Be warned - I might forget to update this,
 run the actual application for up-to-date help!
 
-```
-$ mandrake --help
-
-USAGE:
-    mandrake [OPTIONS] <SUBCOMMAND>
-
-OPTIONS:
-    -h, --help
-            Print help information
-
-        --hidden-address <HIDDEN_ADDRESS>
-            Don't log addresses with this prefix (eg, 0x13370000)
-
-        --hidden-mask <HIDDEN_MASK>
-            The mask to apply before checking --hidden-address (eg, 0xFFFF0000)
-
-    -i, --max-instructions <MAX_INSTRUCTIONS>
-            The maximum number of instructions to read before stopping (to prevent infinite loops)
-            [default: 128]
-
-        --ignore-stderr
-            
-
-        --ignore-stdout
-            
-
-    -m, --minimum-viable-string <MINIMUM_VIABLE_STRING>
-            The number of consecutive ASCII bytes to be considered a string [default: 6]
-
-    -o, --output-format <OUTPUT_FORMAT>
-            The output format (JSON or YAML) [default: JSON]
-
-    -s, --snippit-length <SNIPPIT_LENGTH>
-            The amount of context memory to read [default: 64]
-
-    -V, --version
-            Print version information
-
-        --visible-address <VISIBLE_ADDRESS>
-            Only log addresses in this range (unless they're hidden)
-
-        --visible-mask <VISIBLE_MASK>
-            The mask to apply before checking --visible-address (eg, 0xFFFF0000)
-
-SUBCOMMANDS:
-    code    
-    elf     
-    help    Print this message or the help of the given subcommand(s)
-```
-
-The `code` subcommand runs raw hex as machine code:
-
-```
-$ mandrake code --help
-mandrake-code 
-
-USAGE:
-    mandrake code [OPTIONS] <CODE>
-
-ARGS:
-    <CODE>    The code, as a hex string (eg: "4831C0C3")
-
-OPTIONS:
-    -h, --help                 Print help information
-        --harness <HARNESS>    The path to the required harness [default: ./harness/harness]
-```
-
-The harness is built along with `mandrake`, and is required to analyze raw
-machine code.
-
-The `elf` subcommand runs an elf executable with optional arguments:
-
-```
-$ mandrake elf --help
-mandrake-elf 
-
-USAGE:
-    mandrake elf <ELF> [ARGS]...
-
-ARGS:
-    <ELF>        The ELF executable
-    <ARGS>...    The argument(s) to pass to the ELF executable
-
-OPTIONS:
-    -h, --help    Print help information
-```

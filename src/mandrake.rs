@@ -7,7 +7,6 @@ use nix::sys::ptrace::{getregs, step, cont, kill};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{wait, WaitStatus};
 use nix::unistd::Pid;
-use serde::{Serialize, Deserialize};
 use simple_error::{bail, SimpleResult, SimpleError};
 use spawn_ptrace::CommandPtraceSpawn;
 
@@ -15,7 +14,8 @@ use crate::analyzed_value::AnalyzedValue;
 use crate::mandrake_output::MandrakeOutput;
 use crate::visibility_configuration::VisibilityConfiguration;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+/// Represents the mandrake configuration.
+#[derive(Debug)]
 pub struct Mandrake {
     snippit_length:          usize,
     minimum_viable_string:   usize,

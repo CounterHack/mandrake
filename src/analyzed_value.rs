@@ -1,3 +1,10 @@
+//! Reads a block of memory and translates it into something useful.
+//!
+//! Always, we store the [`u64`] value. Then we try to read the memory pointed
+//! at by it. We store some amount of memory based on what the caller wants,
+//! then try to parse it either as an instruction or a string. That may or
+//! may not work, and it may or may not produce valid output - we do what we
+//! can!
 use std::fmt;
 
 use byteorder::{LittleEndian, WriteBytesExt};
@@ -6,6 +13,13 @@ use nix::sys::ptrace::{read, AddressType};
 use nix::unistd::Pid;
 use serde::{Serialize, Deserialize};
 
+// We initially read this much so we can look for strings and code
+const INITIAL_SNIPPIT_LENGTH: usize = 128;
+
+/// A serializable, analyzed value.
+///
+/// Be careful changing this! Things that consume Mandrake's output depend on
+/// the structure not changing.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AnalyzedValue {
     // The value
@@ -23,7 +37,10 @@ pub struct AnalyzedValue {
 
 impl AnalyzedValue {
     pub fn new(pid: Pid, value: u64, is_instruction_pointer: bool, snippit_length: usize, minimum_viable_string: usize) -> Self {
-        let mut data = match Self::get_memory(pid, value, snippit_length) {
+        // Figure out the longest value we need
+        let bytes_to_get: usize = std::cmp::max(INITIAL_SNIPPIT_LENGTH, snippit_length);
+
+        let mut data = match Self::get_memory(pid, value, bytes_to_get) {
             Some(data) => data,
             None => {
                 // If we can't get memory, just return the value
@@ -36,10 +53,7 @@ impl AnalyzedValue {
             }
         };
 
-        // Truncate it to the actual size they asked for
-        data.truncate(snippit_length as usize);
-
-        // Try and decode from assembly
+        // Try and decode from assembly - decode with the full data length
         let mut decoder = Decoder::with_ip(64, &data, value as u64, DecoderOptions::NONE);
         let as_instruction = match decoder.can_decode() {
             true => {
@@ -60,7 +74,7 @@ impl AnalyzedValue {
             false => None,
         };
 
-        // Try and interpret as a string
+        // Try and interpret as a string - this is also done with the full-length value
         let string_data: Vec<u8> = data.clone().into_iter().take_while(|d| *d != 0).collect();
         let as_string = match std::str::from_utf8(&string_data) {
             Ok(s)  => {
@@ -72,6 +86,9 @@ impl AnalyzedValue {
             },
             Err(_) => None,
         };
+
+        // Truncate it to the actual size they asked for (after checking for instructions)
+        data.truncate(snippit_length);
 
         Self {
             value: value,

@@ -4,7 +4,7 @@ use std::fmt;
 use std::path::Path;
 use std::str::FromStr;
 
-use simple_error::{SimpleResult, SimpleError, bail};
+use simple_error::{SimpleError, bail};
 use clap::Parser;
 use clap_num::maybe_hex;
 
@@ -97,11 +97,15 @@ struct Args {
     action: Action,
 }
 
-fn main() -> SimpleResult<()> {
+/// Main intentially does not return an error.
+///
+/// That means that we're sorta forced to handle all errors cleanly (or
+/// panic :) ).
+fn main() {
+    // Parse the commandline options
     let args = Args::parse();
 
-    println!("{:?}", args);
-
+    // Create an instance of Mandrake with the configurations
     let mandrake = Mandrake::new(
         args.snippit_length,
         args.minimum_viable_string,
@@ -110,6 +114,7 @@ fn main() -> SimpleResult<()> {
         args.ignore_stderr
     );
 
+    // Check which subcommand they ran
     let result = match args.action {
         Action::Code(code_args) => {
             match hex::decode(code_args.code) {
@@ -122,6 +127,7 @@ fn main() -> SimpleResult<()> {
         },
     };
 
+    // Handle errors somewhat more cleanly than just bailing
     match result {
         Ok(r)  => match args.output_format {
             OutputFormat::JSON => println!("{}", serde_json::to_string_pretty(&r).unwrap()),
@@ -129,6 +135,4 @@ fn main() -> SimpleResult<()> {
         },
         Err(e) => eprintln!("Execution failed: {}", e.to_string()),
     };
-
-    Ok(())
 }
