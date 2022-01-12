@@ -14,14 +14,23 @@
 use clap::Parser;
 use clap_num::maybe_hex;
 
+const DEFAULT_MASK: u64 = 0xFFFFFFFFFFFF0000;
+
 #[derive(Parser, Debug)]
 pub struct VisibilityConfiguration {
+    /// Hide instructions that match this address (ANDed with the --hidden-mask)
     #[clap(long, parse(try_from_str=maybe_hex))]
     hidden_address:          Option<u64>,
+
+    /// ANDed with the --hidden-address before comparing - by default, 0xFFFFFFFFFFFF0000
     #[clap(long, parse(try_from_str=maybe_hex))]
     hidden_mask:             Option<u64>,
+
+    /// Only show instructions that match this address (ANDed with the --visible-mask)
     #[clap(long, parse(try_from_str=maybe_hex))]
     visible_address:         Option<u64>,
+
+    /// ANDed with the --visible-address before comparing - by default, 0xFFFFFFFFFFFF0000
     #[clap(long, parse(try_from_str=maybe_hex))]
     visible_mask:            Option<u64>,
 }
@@ -42,19 +51,19 @@ impl VisibilityConfiguration {
     pub fn is_visible(&self, address: u64) -> bool {
         // Suppress addresses that match the hidden_address / hidden_mask, if set
         if let Some(hidden_address) = self.hidden_address {
-            if let Some(hidden_mask) = self.hidden_mask {
-                if (address & hidden_mask) == hidden_address {
-                    return false;
-                }
+            let mask = self.hidden_mask.unwrap_or(DEFAULT_MASK);
+
+            if (address & mask) == hidden_address {
+                return false;
             }
         }
 
         // Suppress addresses that don't match the visible_address / visible_mask
         if let Some(visible_address) = self.visible_address {
-            if let Some(visible_mask) = self.visible_mask {
-                if (address & visible_mask) != visible_address {
-                    return false;
-                }
+            let mask = self.visible_mask.unwrap_or(DEFAULT_MASK);
+
+            if (address & mask) != visible_address {
+                return false;
             }
         }
 

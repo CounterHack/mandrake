@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::fmt;
 use std::path::Path;
 use std::str::FromStr;
@@ -16,6 +14,7 @@ use mandrake::visibility_configuration::VisibilityConfiguration;
 enum OutputFormat {
     JSON,
     YAML,
+    PICKLE,
 }
 
 impl FromStr for OutputFormat {
@@ -23,8 +22,9 @@ impl FromStr for OutputFormat {
 
     fn from_str(input: &str) -> Result<OutputFormat, Self::Err> {
         match &input.to_lowercase()[..] {
-            "json"  => Ok(OutputFormat::JSON),
-            "yaml"  => Ok(OutputFormat::YAML),
+            "json"    => Ok(OutputFormat::JSON),
+            "yaml"    => Ok(OutputFormat::YAML),
+            "pickle"  => Ok(OutputFormat::PICKLE),
             _       => bail!("Unknown format: {}", input),
         }
     }
@@ -33,8 +33,9 @@ impl FromStr for OutputFormat {
 impl fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::JSON => write!(f, "JSON"),
-            Self::YAML => write!(f, "YAML"),
+            Self::JSON   => write!(f, "JSON"),
+            Self::YAML   => write!(f, "YAML"),
+            Self::PICKLE => write!(f, "PICKLE"),
         }
     }
 }
@@ -71,7 +72,7 @@ enum Action {
 #[derive(Parser, Debug)]
 #[clap(about, version, author)]
 struct Args {
-    /// The output format (JSON or YAML)
+    /// The output format ("JSON", "YAML", or "Pickle")
     #[clap(short, long, default_value_t = OutputFormat::JSON)]
     output_format: OutputFormat,
 
@@ -87,9 +88,11 @@ struct Args {
     #[clap(short='i', long, default_value_t = 128, parse(try_from_str=maybe_hex))]
     max_instructions: usize,
 
+    /// Don't save output from stdout
     #[clap(long)]
     ignore_stdout: bool,
 
+    /// Don't save output from stderr
     #[clap(long)]
     ignore_stderr: bool,
 
@@ -130,8 +133,14 @@ fn main() {
     // Handle errors somewhat more cleanly than just bailing
     match result {
         Ok(r)  => match args.output_format {
-            OutputFormat::JSON => println!("{}", serde_json::to_string_pretty(&r).unwrap()),
-            OutputFormat::YAML => println!("{}", serde_yaml::to_string(&r).unwrap()),
+            OutputFormat::JSON   => println!("{}", serde_json::to_string_pretty(&r).unwrap()),
+            OutputFormat::YAML   => println!("{}", serde_yaml::to_string(&r).unwrap()),
+            OutputFormat::PICKLE => {
+                println!("import base64");
+                println!("import pickle");
+                println!();
+                println!("pickle.loads(base64.b64decode(\"{}\"))", base64::encode(serde_pickle::to_vec(&r, Default::default()).unwrap()));
+            }
         },
         Err(e) => eprintln!("Execution failed: {}", e.to_string()),
     };

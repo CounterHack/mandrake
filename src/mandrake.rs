@@ -83,10 +83,18 @@ impl Mandrake {
                                 continue;
                             }
 
+                            // If we don't have a first address, save the current address
+                            if result.starting_address.is_none() {
+                                result.starting_address = Some(rip.value);
+                            }
+
+                            // Count the instructions
+                            result.instructions_executed += 1;
+
                             result.history.push(regs);
 
                             if let Some(max_instructions) = self.max_logged_instructions {
-                                if result.history.len() > max_instructions {
+                                if result.history.len() >= max_instructions {
                                     result.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", max_instructions));
                                     break;
                                 }

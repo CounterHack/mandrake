@@ -1,11 +1,5 @@
 A binary analysis / instrumentation library for Rust.
 
-# TODO
-
-* Make sure all the arguments work
-* Learn how to publish on cargo
-* Document how to use effectively
-
 # Author
 
 Ron Bowes from Counter Hack
@@ -137,10 +131,6 @@ If the shellcode crashes, that's also fine; this shellcode runs
 
 ```
 $ cargo run -- --snippit-length 4 code --harness=./harness/harness '6841414141c3'
-   Compiling mandrake v0.1.0 (/home/ron/counterhack/mandrake)
-    Finished dev [unoptimized + debuginfo] target(s) in 1.92s
-     Running `target/debug/mandrake --snippit-length 4 code --harness=./harness/harness 6841414141c3`
-
 {
   "success": true,
   "pid": 1054409,
@@ -160,10 +150,10 @@ We can also capture `stdout`:
 
 ```
 $ cargo run -- --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7c00100000048c7c7010000005e48c7c20c0000000f05c3'
-{                              
-  "success": true,             
-  "pid": 1055334,        
-  "history": [                 
+{
+  "success": true,
+  "pid": 1055334,
+  "history": [
 [...]
   ],
   "stdout": "Hello World!",
@@ -175,14 +165,160 @@ $ cargo run -- --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7
 ## Elf mode
 
 In addition to raw shellcode, we can also instrument an ELF (Linux) binary! We
-haven't used ELF binaries as much as shellcode, so 
+haven't used ELF binaries as much as shellcode, so this isn't as well tested
+and hardy. Your mileage may vary!
 
-## What do I do with All That JSON?
+The biggest thing to know is that, in an ELF binary, there's gonna be A LOT
+more junk, potentially, especially if you call out to libc functions. It might
+also run REALLLLY slow if you trace through all the libc stuff.
+
+To initially trigger the logger, put an `int 3` instruction in front of the
+code that you want to instrument. I don't love doing it that way, but otherwise
+it takes a LONG time to run.
+
+To turn the debugger back off again, put an `int 3` AFTER the code that you want
+to instrument.
+
+If you have an `int 3` within the code you want to instrument, you're gonna have
+a bad time (sorry, I wish I could think of a better way!)
+
+Here's an example of something you might want to instrument:
+
+```
+$ cat demo.c
+#include <stdio.h>
+#include <string.h>
+
+int main(int argc, char *argv[])
+{
+  int i = 0;
+  char buffer[16];
+
+  asm("int 3");
+
+  asm("nop");
+  asm("nop");
+  asm("nop");
+
+  asm("int 3");
+
+  return 0;
+}
+
+$ gcc -o demo -O0 -masm=intel --no-pie demo.c
+```
+
+When you execute it in mandrake, you will see the three `nop` instructions:
+
+```
+$ cargo run -- --snippit-length 4 elf ./demo
+{
+  "success": true,
+  "pid": 1121316,
+  "history": [
+    {
+      "rip": {
+        "value": 93824992235867,
+        "memory": [
+          144
+        ],
+        "as_instruction": "nop",
+        "as_string": null
+      }
+[...]
+```
+
+But if there are libc calls, things can get a bit big! Here's another example:
+
+```
+$ cat demo2.c
+#include <stdio.h>
+#include <string.h>
+
+int main(int argc, char *argv[])
+{
+  int i = 0;
+  char buffer[16];
+
+  asm("int 3");
+  asm("nop");
+
+  strcpy(buffer, argv[1]);
+  printf("%s\n", buffer);
+
+  asm("nop");
+  asm("int 3");
+
+  return 0;
+}
+
+$ gcc -o demo2 -O0 -masm=intel --no-pie demo2.c
+```
+
+If we try to instrument that, we quickly run into our execution cap:
+
+```
+$ cargo run -- --snippit-length 4 elf ./demo2 abc
+
+[...]
+"exit_reason": "Execution stopped at instruction cap (max instructions: 128)",
+```
+
+We can raise that, but we end up with a whole lot of output:
+
+```
+$ cargo run -- --max-instructions 10000 --snippit-length 4 elf ./demo2 abc
+[...]
+{
+  "instructions_executed": 3209,
+  "success": true,
+```
+
+Maybe you're okay with looking through 3209 instructions, but I sure don't
+want to!
+
+The best you can do is probably to turn off ASLR, then filter down to simply
+the binary you want to see. Here's how I do that:
+
+To do that, ensure your binary is compiled with --no-pie, then turn off ASLR,
+execute it, and have a look at the starting address:
+
+```
+$ echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+$ cargo run -- --max-instructions 1 --snippit-length 4 elf ./demo2 abc
+[...]
+{
+  "starting_address": 93824992235899,
+  "instructions_executed": 1,
+```
+
+That value is `0x55555555517b` in hex. It might vary for you, so don't use
+this command directly if you're following along!
+
+By default, `mandrake` masks out the last 4 nibbles, meaning effectively the
+address is 0x555555550000 when compared. The mask can be changed with
+`--hidden-mask` if you want, but we don't need to:
+
+```
+$ cargo run -- --output-format=json --snippit-length 4 elf ./demo2 --visible-address 0x0000555555550000
+[...]
+{
+  "starting_address": 93824992235899,
+  "instructions_executed": 13,
+  "success": true,
+[...]
+```
+
+Much better!
+
+## What do I do with all that JSON?
 
 Well, you can also output with `--output-format=YAML`. :)
 
 We can actually support any type that [Serde](https://serde.rs/) supports,
 please file a bug or send a patch if you'd like Pickle or something.
+
+<Edit: I added `--output-format=PICKLE`>
 
 But to answer the question.. I dunno! At Counter Hack, we wrapped a web
 interface around it to teach shellcoding. I bet there are a lot more cool

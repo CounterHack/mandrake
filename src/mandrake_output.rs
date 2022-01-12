@@ -8,6 +8,9 @@ use crate::analyzed_value::AnalyzedValue;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MandrakeOutput {
+    pub starting_address: Option<u64>,
+    pub instructions_executed: usize,
+
     pub success: bool,
     pub pid: u32,
     pub history: Vec<HashMap<String, AnalyzedValue>>,
@@ -20,6 +23,9 @@ pub struct MandrakeOutput {
 impl MandrakeOutput {
     pub fn new(pid: u32) -> Self {
         MandrakeOutput {
+            starting_address: None,
+            instructions_executed: 0,
+
             success: true,
             pid: pid,
             history: vec![],
