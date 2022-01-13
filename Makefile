@@ -11,11 +11,17 @@ all:
 indocker:
 	# Build the binary
 	cargo build --release
-	chown -R ${UID}:${GID} .
-	strip target/release/mandrake
+	mkdir -p build/
+	cp target/release/mandrake build/
+	strip build/mandrake
 
 	# Build the harness
 	cd harness && make
+	cp harness/harness build/
+	strip build/harness
+
+	# Fix ownership, because Docker
+	chown -R ${UID}:${GID} .
 
 clean:
 	rm -f target

@@ -4,7 +4,7 @@ A binary analysis / instrumentation library for Rust.
 
 Ron Bowes from Counter Hack
 
-License: Apache
+License: MIT
 
 # Purpose
 
@@ -330,62 +330,108 @@ things you can do, though, use your imagination!
 
 # Build
 
-To build a debug version, install the Rust toolchain then use `cargo build` or
-`cargo run`:
+If you have the Rust toolchain (`cargo`), you don't really need to build it!
+It'll automatically build when you `cargo run`.
 
-```
-$ cargo build
-   Compiling autocfg v1.0.1
-   Compiling proc-macro2 v1.0.36
-   [...]
-Compiling mandrake v0.1.0 (/home/ron/counterhack/mandrake)
-    Finished dev [unoptimized + debuginfo] target(s) in 23.02s
-```
+But if you don't want to install `cargo`, fear not! You can just run `make` in
+the root folder, and it should build you a binary release using a Docker
+environment (requires Docker).
 
-To build a release, install Docker then run `make` - that will build the
-Mandrake binary as well as the `harness` executable (used for analyzing
-raw shellcode):
-
-```
-$ make
-docker build . -t build-mandrake -f Dockerfile.build
-Sending build context to Docker daemon    422MB
-Step 1/5 : FROM rust:latest
- ---> 4db2e2d14f99
-Step 2/5 : MAINTAINER "Ron Bowes"
- ---> Using cache
- ---> 139c6de59829
-Step 3/5 : RUN mkdir /src
- ---> Using cache
- ---> b932d35fb223
-Step 4/5 : WORKDIR /src
- ---> Using cache
- ---> cd060ab50adc
-Step 5/5 : CMD ["make", "indocker"]
- ---> Using cache
- ---> 09759d644859
-Successfully built 09759d644859
-Successfully tagged build-mandrake:latest
-docker run --rm -v /home/ron/counterhack/mandrake:/src --env UID=1000 --env GID=1000 -ti build-mandrake
-# Build the binary
-cargo build --release
-    Updating crates.io index
-[...]
-Compiling mandrake v0.1.0 (/src)
-    Finished release [optimized] target(s) in 1m 12s
-chown -R 1000:1000 .
-strip target/release/mandrake
-# Build the harness
-cd harness && make
-make[1]: Entering directory '/src/harness'
-make[1]: Nothing to be done for 'all'.
-make[1]: Leaving directory '/src/harness'
-```
-
-# How it works
+The build files are copies into the build/ folder when complete.
 
 # Appendix: Usage
 
 This is just the output of `--help`. Be warned - I might forget to update this,
 run the actual application for up-to-date help!
 
+```
+$ mandrake --help
+Mandrake 0.1.0
+Ron Bowes <ron@counterhack.com>
+Mandrake is an open-source machine code analyzer / instrumenter written in Rust
+
+USAGE:
+    mandrake [OPTIONS] <SUBCOMMAND>
+
+OPTIONS:
+    -h, --help
+            Print help information
+
+    -i, --max-instructions <MAX_INSTRUCTIONS>
+            The maximum number of instructions to read before stopping (to prevent infinite loops)
+            [default: 128]
+
+        --ignore-stderr
+            Don't save output from stderr
+
+        --ignore-stdout
+            Don't save output from stdout
+
+    -m, --minimum-viable-string <MINIMUM_VIABLE_STRING>
+            The number of consecutive ASCII bytes to be considered a string [default: 6]
+
+    -o, --output-format <OUTPUT_FORMAT>
+            The output format ("JSON", "YAML", or "Pickle") [default: JSON]
+
+    -s, --snippit-length <SNIPPIT_LENGTH>
+            The amount of context memory to read [default: 64]
+
+    -V, --version
+            Print version information
+
+SUBCOMMANDS:
+    code    Analyze raw machine code using a harness
+    elf     Analyze an ELF file (Linux executable)
+    help    Print this message or the help of the given subcommand(s)
+```
+
+```
+$ mandrake code --help
+mandrake-code 0.1.0
+Ron Bowes <ron@counterhack.com>
+Analyze raw machine code using a harness
+
+USAGE:
+    mandrake code [OPTIONS] <CODE>
+
+ARGS:
+    <CODE>    The code, as a hex string (eg: "4831C0C3")
+
+OPTIONS:
+    -h, --help                 Print help information
+        --harness <HARNESS>    The path to the required harness [default: ./harness/harness]
+    -V, --version              Print version information
+```
+
+```
+$ mandrake elf --help
+mandrake-elf 0.1.0
+Ron Bowes <ron@counterhack.com>
+Analyze an ELF file (Linux executable)
+
+USAGE:
+    mandrake elf [OPTIONS] <ELF> [ARGS]...
+
+ARGS:
+    <ELF>        The ELF executable
+    <ARGS>...    The argument(s) to pass to the ELF executable
+
+OPTIONS:
+    -h, --help
+            Print help information
+
+        --hidden-address <HIDDEN_ADDRESS>
+            Hide instructions that match this address (ANDed with the --hidden-mask)
+
+        --hidden-mask <HIDDEN_MASK>
+            ANDed with the --hidden-address before comparing - by default, 0xFFFFFFFFFFFF0000
+
+    -V, --version
+            Print version information
+
+        --visible-address <VISIBLE_ADDRESS>
+            Only show instructions that match this address (ANDed with the --visible-mask)
+
+        --visible-mask <VISIBLE_MASK>
+            ANDed with the --visible-address before comparing - by default, 0xFFFFFFFFFFFF0000
+```

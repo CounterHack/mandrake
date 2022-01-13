@@ -42,6 +42,7 @@ impl fmt::Display for OutputFormat {
 
 
 #[derive(Parser, Debug)]
+#[clap(about, version, author)]
 struct Elf {
     #[clap(flatten)]
     visibility_configuration: VisibilityConfiguration,
@@ -54,6 +55,7 @@ struct Elf {
 }
 
 #[derive(Parser, Debug)]
+#[clap(about, version, author)]
 struct Code {
     /// The code, as a hex string (eg: "4831C0C3")
     code: String,
@@ -65,12 +67,16 @@ struct Code {
 
 #[derive(clap::Subcommand, Debug)]
 enum Action {
-    Elf(Elf),
+    /// Analyze raw machine code using a harness
     Code(Code),
+
+    /// Analyze an ELF file (Linux executable)
+    Elf(Elf),
 }
 
+/// Mandrake is an open-source machine code analyzer / instrumenter written in Rust.
 #[derive(Parser, Debug)]
-#[clap(about, version, author)]
+#[clap(name = "Mandrake", about, version, author)]
 struct Args {
     /// The output format ("JSON", "YAML", or "Pickle")
     #[clap(short, long, default_value_t = OutputFormat::JSON)]
