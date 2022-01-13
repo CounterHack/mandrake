@@ -181,7 +181,7 @@ impl Mandrake {
         ].into_iter().collect())
     }
 
-    pub fn analyze_code(&self, code: Vec<u8>, harness_path: &Path) -> SimpleResult<MandrakeOutput> {
+    pub fn analyze_code(&self, code: Vec<u8>, harness_path: &Path, show_everything: bool) -> SimpleResult<MandrakeOutput> {
         if !harness_path.exists() {
             bail!("Could not find the execution harness: {:?} - use --harness to specify the path to the 'harness' executable (which is available on https://github.com/counterhack)", harness_path);
         }

@@ -63,6 +63,11 @@ struct Code {
     /// The path to the required harness
     #[clap(long, default_value_t = String::from("./harness/harness"))]
     harness: String,
+
+    /// If set, doesn't hide instructions executed outside of the harness
+    /// (helpful if, say, you're analyzing shellcode that allocates memory)
+    #[clap(long)]
+    show_everything: bool,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -127,7 +132,7 @@ fn main() {
     let result = match args.action {
         Action::Code(code_args) => {
             match hex::decode(code_args.code) {
-                Ok(code) => mandrake.analyze_code(code, &Path::new(&code_args.harness)),
+                Ok(code) => mandrake.analyze_code(code, &Path::new(&code_args.harness), code_args.show_everything),
                 Err(e) => Err(SimpleError::new(format!("Could not decode hex: {}", e))),
             }
         },
