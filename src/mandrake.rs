@@ -182,7 +182,7 @@ impl Mandrake {
 
     pub fn analyze_code(&self, code: Vec<u8>, harness_path: &Path) -> SimpleResult<MandrakeOutput> {
         if !harness_path.exists() {
-            bail!("Could not find the execution harness: {:?}", harness_path);
+            bail!("Could not find the execution harness: {:?} - use --harness to specify the path to the 'harness' executable (which is available on https://github.com/counterhack)", harness_path);
         }
 
         let child = Command::new(harness_path)

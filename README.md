@@ -43,7 +43,7 @@ Once you have `cargo` and `edition2021`, you can build and run from source:
 ```
 $ git clone https://github.com/CounterHack/mandrake.git
 $ cd mandrake
-$ cargo run -- --help
+$ mandrake --help
 ```
 
 ## Installing with docker
@@ -69,7 +69,7 @@ Or you can use an interactive Docker environment directly:
 ```
 $ docker run -ti -v $PWD:/src rust:latest /bin/bash
 root@6764c399bc84:/# cd src
-root@6764c399bc84:/src# cargo run -- --help
+root@6764c399bc84:/src# mandrake --help
 ```
 
 ## Building a Binary
@@ -88,16 +88,17 @@ public, we'll have a link here.*
 # Usage
 
 For the remainder, of this README, we will assume you are executing using
-`cargo run`.
+a `mandrake` binary. You can just as easily use `cargo run --` anywhere you
+see `mandrake`!
 
 `mandrake` has two modes, implemented as subcommnds - either `code` or `elf`.
 You can run it with `--help` to see the full options, including for the
 subcommands:
 
 ```
-$ cargo run -- --help
-$ cargo run -- code --help
-$ cargo run -- elf --help
+$ mandrake --help
+$ mandrake code --help
+$ mandrake elf --help
 ```
 
 ## Analyzing Raw Code
@@ -111,11 +112,10 @@ How you get hex-encoded machine code is sort of up to you, but if you want
 something simple to test, try `c3` (`ret`) or `4831c048ffc0c3`
 (`xor rax, rax` / `inc rax` / `ret`) - aka, `return 1`.
 
-You can either run the `mandrake` executable, or use `cargo run --` as shown
-below:
+Here is an example:
 
 ```
-$ cargo run -- --snippit-length 4 code 'c3'
+$ mandrake --snippit-length 4 code 'c3'
 
 {
   "success": true,
@@ -149,7 +149,7 @@ $ cargo run -- --snippit-length 4 code 'c3'
 This example also demonstrates how to use a custom path to the `harness`:
 
 ```
-$ cargo run -- --snippit-length 4 code --harness=./harness/harness '4831c048ffc0c3'
+$ mandrake --snippit-length 4 code --harness=./harness/harness '4831c048ffc0c3'
 
 {
   "success": true,
@@ -190,7 +190,7 @@ If the shellcode crashes, that's also fine; this shellcode runs
 `push 0x41414141` / `ret`, which will crash at `0x41414141`:
 
 ```
-$ cargo run -- --snippit-length 4 code --harness=./harness/harness '6841414141c3'
+$ mandrake --snippit-length 4 code --harness=./harness/harness '6841414141c3'
 {
   "success": true,
   "pid": 1054409,
@@ -209,7 +209,7 @@ $ cargo run -- --snippit-length 4 code --harness=./harness/harness '6841414141c3
 We can also capture `stdout`:
 
 ```
-$ cargo run -- --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7c00100000048c7c7010000005e48c7c20c0000000f05c3'
+$ mandrake --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7c00100000048c7c7010000005e48c7c20c0000000f05c3'
 {
   "success": true,
   "pid": 1055334,
@@ -271,7 +271,7 @@ $ gcc -o demo -O0 -masm=intel --no-pie demo.c
 When you execute it in mandrake, you will see the three `nop` instructions:
 
 ```
-$ cargo run -- --snippit-length 4 elf ./demo
+$ mandrake --snippit-length 4 elf ./demo
 {
   "success": true,
   "pid": 1121316,
@@ -318,7 +318,7 @@ $ gcc -o demo2 -O0 -masm=intel --no-pie demo2.c
 If we try to instrument that, we quickly run into our execution cap:
 
 ```
-$ cargo run -- --snippit-length 4 elf ./demo2 abc
+$ mandrake --snippit-length 4 elf ./demo2 abc
 
 [...]
 "exit_reason": "Execution stopped at instruction cap (max instructions: 128)",
@@ -327,7 +327,7 @@ $ cargo run -- --snippit-length 4 elf ./demo2 abc
 We can raise that, but we end up with a whole lot of output:
 
 ```
-$ cargo run -- --max-instructions 10000 --snippit-length 4 elf ./demo2 abc
+$ mandrake --max-instructions 10000 --snippit-length 4 elf ./demo2 abc
 [...]
 {
   "instructions_executed": 3209,
@@ -345,7 +345,7 @@ execute it, and have a look at the starting address:
 
 ```
 $ echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
-$ cargo run -- --max-instructions 1 --snippit-length 4 elf ./demo2 abc
+$ mandrake --max-instructions 1 --snippit-length 4 elf ./demo2 abc
 [...]
 {
   "starting_address": 93824992235899,
@@ -360,7 +360,7 @@ address is 0x555555550000 when compared. The mask can be changed with
 `--hidden-mask` if you want, but we don't need to:
 
 ```
-$ cargo run -- --output-format=json --snippit-length 4 elf ./demo2 --visible-address 0x0000555555550000
+$ mandrake --output-format=json --snippit-length 4 elf ./demo2 --visible-address 0x0000555555550000
 [...]
 {
   "starting_address": 93824992235899,
