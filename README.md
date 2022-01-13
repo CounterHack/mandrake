@@ -364,12 +364,13 @@ $ mandrake --output-format=json --snippit-length 4 elf ./demo2 --visible-address
 [...]
 {
   "starting_address": 93824992235899,
-  "instructions_executed": 13,
+  "instructions_executed": 3209,
   "success": true,
 [...]
 ```
 
-Much better!
+Note that while 3209 instructions are executed, the results only contain 13
+entries!
 
 ## What do I do with all that JSON?
 

@@ -78,6 +78,17 @@ impl Mandrake {
                                 }
                             }
 
+                            // Count the instructions
+                            result.instructions_executed += 1;
+
+                            // Count the actual instructions executed (even if they're invisible)
+                            if let Some(max_instructions) = self.max_logged_instructions {
+                                if result.instructions_executed >= max_instructions {
+                                    result.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", max_instructions));
+                                    break;
+                                }
+                            }
+
                             // Check if we're supposed to see this
                             if !visibility.is_visible(rip.value) {
                                 continue;
@@ -88,17 +99,7 @@ impl Mandrake {
                                 result.starting_address = Some(rip.value);
                             }
 
-                            // Count the instructions
-                            result.instructions_executed += 1;
-
                             result.history.push(regs);
-
-                            if let Some(max_instructions) = self.max_logged_instructions {
-                                if result.history.len() >= max_instructions {
-                                    result.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", max_instructions));
-                                    break;
-                                }
-                            }
 
                             continue;
                         },
