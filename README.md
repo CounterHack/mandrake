@@ -2,25 +2,28 @@ A binary analysis / instrumentation library for Rust.
 
 # Author
 
-Ron Bowes from Counter Hack
+[Ron Bowes](https://www.skullsecurity.org/) from Counter Hack
 
 License: MIT
 
 # Purpose
 
 Mandrake is a framework for executing and instrumenting machine code or ELF
-binaries. It'll execute either a full binary or a block of hex-encoded machine
-code, and output the results as JSON or YAML.
+binaries. It can execute a full binary or a block of hex-encoded machine code,
+saving the output results as JSON or YAML.
 
-The goal is to help understand or analyze unknown code. While most disassembly
-tools (such as `ndisasm`) will do a great job of showing what each instruction
-and opcode do, `mandrake` goes a step further and *executes* the code, showing
-what actually ran.
+The goal of Mandrake is to help analysts understand or evalauate unknown code.
+While most disassembly tools (such as `ndisasm`) will do a great job of showing
+what each instruction and opcode do, `mandrake` goes a step further and
+*executes* the code, showing what actually ran.
 
-That means that packed, self-modified, and looping code can be analyzed much
-more easily, since you'll see very clearly which syscalls are being performed!
+> This means that packed, self-modified, and looping code can be analyzed much
+> more easily, since you'll see very clearly which syscalls are being
+> performed!
 
-*Warning: This DOES run the code on your machine, using Ptrace. You probably don't want to analyze malicious code!*
+*Warning: This DOES run the code on your machine, using
+[ptrace](https://man7.org/linux/man-pages/man2/ptrace.2.html). You probably
+don't want to analyze malicious code on a production system!*
 
 # Installation
 
@@ -31,12 +34,11 @@ Later, we'll need to publish properly on `cargo`.
 # Usage
 
 To use this, the simplest way is to check out the source, install the Rust
-build environment (ie, `cargo`), and just use it right from the source tree.
+build environment (i.e., `cargo`), and just use it right from the source tree.
 So far, we haven't really done any fancy releases.
 
-`mandrake` has two modes, implemented as subcommnds - either `code` or `elf`.
-You can run it with `--help` to see the full options, including for the
-subcommands:
+Mandrake has two modes, implemented as subcommands - `code` and `elf`.  Run
+Mandrake with `--help` to see the full options:
 
 ```
 $ cargo run -- --help
@@ -46,7 +48,7 @@ $ cargo run -- elf --help
 
 ## Analyzing Raw Code
 
-To use `mandrake` to analyze raw machine code, you need two things:
+To use Mandrake to analyze raw machine code, you need two things:
 
 * The `harness` executable - you'll get this when you check out the codebase, but you can also get it [directly from Github](https://github.com/CounterHack/mandrake/blob/main/harness/harness)
 * The hex-encoded machine code
@@ -130,8 +132,9 @@ $ cargo run -- --snippit-length 4 code --harness=./harness/harness '4831c048ffc0
 }
 ```
 
-If the shellcode crashes, that's also fine; this shellcode runs
-`push 0x41414141` / `ret`, which will crash at `0x41414141`:
+If you are testing shellcode that crashes, Mandrake will handle that
+gracefully.  This example runs the shellcode `push 0x41414141` / `ret`, which
+will crash at `0x41414141`:
 
 ```
 $ cargo run -- --snippit-length 4 code --harness=./harness/harness '6841414141c3'
@@ -150,7 +153,7 @@ $ cargo run -- --snippit-length 4 code --harness=./harness/harness '6841414141c3
 }
 ```
 
-We can also capture `stdout`:
+Mandrake can also capture standard output:
 
 ```
 $ cargo run -- --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7c00100000048c7c7010000005e48c7c20c0000000f05c3'
@@ -168,23 +171,22 @@ $ cargo run -- --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7
 
 ## Analyzing Elf Files
 
-In addition to raw shellcode, we can also instrument an ELF (Linux) binary! We
+In addition to shellcode, we can also instrument an ELF (Linux) binary! We
 haven't used ELF binaries as much as shellcode, so this isn't as well tested
 and hardy. Your mileage may vary!
 
 The biggest thing to know is that, in an ELF binary, there's gonna be A LOT
-more junk, potentially, especially if you call out to libc functions. It might
-also run REALLLLY slow if you trace through all the libc stuff.
+more junk, especially if you call out to libc functions. It might also run
+REALLLLY slow if you trace through all the libc code.
 
-To initially trigger the logger, put an `int 3` instruction in front of the
-code that you want to instrument. I don't love doing it that way, but otherwise
-it takes a LONG time to run.
+If you can modify the ELF binary, you can trigger the logger by adding an `int
+3` instruction in front of the code that you want to instrument.  To turn the
+debugger back off again, add an `int 3` AFTER the code that you want to
+instrument. (I don't love doing it that way, but otherwise it takes a LONG time
+to run.)
 
-To turn the debugger back off again, put an `int 3` AFTER the code that you want
-to instrument.
-
-If you have an `int 3` within the code you want to instrument, you're gonna have
-a bad time (sorry, I wish I could think of a better way!)
+> NOTE: If you have an `int 3` within the code you want to instrument, you're
+> gonna have a bad time (sorry, I wish I could think of a better way!)
 
 Here's an example of something you might want to instrument:
 
@@ -212,7 +214,7 @@ int main(int argc, char *argv[])
 $ gcc -o demo -O0 -masm=intel --no-pie demo.c
 ```
 
-When you execute it in mandrake, you will see the three `nop` instructions:
+When you execute it in Mandrake, you will see the three `nop` instructions:
 
 ```
 $ cargo run -- --snippit-length 4 elf ./demo
@@ -259,7 +261,7 @@ int main(int argc, char *argv[])
 $ gcc -o demo2 -O0 -masm=intel --no-pie demo2.c
 ```
 
-If we try to instrument that, we quickly run into our execution cap:
+If we try to instrument `demo2`, we quickly run into our execution cap:
 
 ```
 $ cargo run -- --snippit-length 4 elf ./demo2 abc
@@ -278,13 +280,13 @@ $ cargo run -- --max-instructions 10000 --snippit-length 4 elf ./demo2 abc
   "success": true,
 ```
 
-Maybe you're okay with looking through 3209 instructions, but I sure don't
-want to!
+> Maybe you're okay with looking through 3209 instructions, but I sure don't
+> want to!
 
 The best you can do is probably to turn off ASLR, then filter down to simply
 the binary you want to see. Here's how I do that:
 
-To do that, ensure your binary is compiled with `--no-pie`, then turn off ASLR,
+Ensure your binary is compiled with `--no-pie`, then turn off ASLR,
 execute it, and have a look at the starting address:
 
 ```
@@ -299,7 +301,7 @@ $ cargo run -- --max-instructions 1 --snippit-length 4 elf ./demo2 abc
 That value is `0x55555555517b` in hex. It might vary for you, so don't use
 this command directly if you're following along!
 
-By default, `mandrake` masks out the last 4 nibbles, meaning effectively the
+By default, Mandrake masks out the last 4 nibbles, meaning effectively the
 address is 0x555555550000 when compared. The mask can be changed with
 `--hidden-mask` if you want, but we don't need to:
 
