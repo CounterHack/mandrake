@@ -72,11 +72,23 @@ root@6764c399bc84:/# cd src
 root@6764c399bc84:/src# cargo run -- --help
 ```
 
+## Building a Binary
+
+We have included a Dockerfile to build binary releases. To build a release,
+execute `make` in the source directory. That will use `docker` to build
+releases in the `build/` directory.
+
+Once those are built, you should be able to execute `build/mandrake` with no
+extra dependencies (besides the hardness, which will also be compiled into
+`build/`.
+
+*We plan to do proper binary releases but have not yet. By the time this is
+public, we'll have a link here.*
+
 # Usage
 
-To use this, the simplest way is to check out the source, install the Rust
-build environment (ie, `cargo`), and just use it right from the source tree.
-So far, we haven't really done any fancy releases.
+For the remainder, of this README, we will assume you are executing using
+`cargo run`.
 
 `mandrake` has two modes, implemented as subcommnds - either `code` or `elf`.
 You can run it with `--help` to see the full options, including for the
