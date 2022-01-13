@@ -24,9 +24,53 @@ more easily, since you'll see very clearly which syscalls are being performed!
 
 # Installation
 
-Right now, download + build using `cargo`. That's described later.
+*This must be run on an x64-based Linux system!*
 
-Later, we'll need to publish properly on `cargo`.
+The best way to execute `mandrake` is to check it out from
+[the Github repo](https://github.com/counterhack/mandrake), then build + run
+with either `cargo` (the Rust toolchain) or `docker`.
+
+## Executing with cargo
+
+To run with `cargo`, you need the `edition2021` edition of Rust (which usually
+means installing [rustup](https://rustup.rs/) (or using the `rust:latest`
+Docker image). Probably distros will start including that edition in their
+repos eventually, and I hate depending on it, but some of the dependencies I
+pull in require it.
+
+Once you have `cargo` and `edition2021`, you can build and run from source:
+
+```
+$ git clone https://github.com/CounterHack/mandrake.git
+$ cd mandrake
+$ cargo run -- --help
+```
+
+## Installing with docker
+
+Alternatively, we include a `Makefile` that just uses the `rust:latest` Docker
+container. You can run `make` to use that:
+
+```
+$ make run
+docker build . -t mandrake-build -f Dockerfile.build
+
+[...]
+
+Successfully tagged mandrake-execute:latest
+
+To execute, run:
+
+docker run --rm -ti mandrake-execute --help
+```
+
+Or you can use an interactive Docker environment directly:
+
+```
+$ docker run -ti -v $PWD:/src rust:latest /bin/bash
+root@6764c399bc84:/# cd src
+root@6764c399bc84:/src# cargo run -- --help
+```
 
 # Usage
 

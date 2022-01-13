@@ -1,13 +1,11 @@
-# cargo-features = ["strip"]
-
 [package]
 name = "mandrake"
 authors = ["Ron Bowes <ron@counterhack.com>"]
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 description = "Mandrake is an open-source machine code analyzer / instrumenter"
 homepage = "https://github.com/counterhack/mandrake"
-repo = "https://github.com/counterhack/mandrake"
+repository = "https://github.com/counterhack/mandrake"
 license = "mit"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
