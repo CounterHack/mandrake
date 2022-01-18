@@ -6,6 +6,23 @@ Ron Bowes from Counter Hack
 
 License: MIT
 
+# Acknowledgements
+
+Thanks to folks:
+
+* Daniel Pendolino, for helping me with the initial idea
+* Josh Wright, for helping with testing and language
+* Ed Skoudis, for giving me permission to release this open source
+* Counter Hack and SANS in general, for giving me the time I needed to write this, as well as encouragement
+* Ryan Chapman, for their amazing [syscall table](https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/) that I parsed into [/src/syscalls.csv](a CSV file)
+
+# TODO
+
+* Log other registers (r12, etc)
+  * Update syscall code
+* Display syscalls more nicely
+
+
 # Purpose
 
 Mandrake is a framework for executing and instrumenting machine code or ELF

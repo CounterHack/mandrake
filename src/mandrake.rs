@@ -127,6 +127,10 @@ impl Mandrake {
 
         // I don't know why, but this fixes a random timeout that sometimes breaks
         // this :-/
+        //
+        // As of 2022-01, I have no idea if this is still needed or if the bug
+        // this fixed is long-gone, but I'm too afraid to try because the bug
+        // was always sporadic :)
         println!("");
 
         // Whatever situation we're in, we need to make sure the process is dead
@@ -168,7 +172,7 @@ impl Mandrake {
         };
 
         // Analyze and save each one
-        Ok(vec![
+        let mut out: HashMap<String, AnalyzedValue> = vec![
             ("rip".to_string(), AnalyzedValue::new(pid, regs.rip, true,  self.snippit_length, self.minimum_viable_string)),
             ("rax".to_string(), AnalyzedValue::new(pid, regs.rax, false, self.snippit_length, self.minimum_viable_string)),
             ("rbx".to_string(), AnalyzedValue::new(pid, regs.rbx, false, self.snippit_length, self.minimum_viable_string)),
@@ -178,7 +182,30 @@ impl Mandrake {
             ("rdi".to_string(), AnalyzedValue::new(pid, regs.rdi, false, self.snippit_length, self.minimum_viable_string)),
             ("rbp".to_string(), AnalyzedValue::new(pid, regs.rbp, false, self.snippit_length, self.minimum_viable_string)),
             ("rsp".to_string(), AnalyzedValue::new(pid, regs.rsp, false, self.snippit_length, self.minimum_viable_string)),
-        ].into_iter().collect())
+        ].into_iter().collect();
+
+        // Handle special instructions
+        if let Some(rip) = &out.get("rip") {
+            if let Some(instruction) = &rip.as_instruction {
+                if instruction == "syscall" {
+                    // Load + clone registers before getting a mutable instance of
+                    // rip (Rust smartly doesn't let us read and write a variable
+                    // at the same time!)
+                    let rax = out.get("rax").ok_or_else(|| SimpleError::new(format!("Could not read value of rax")))?.clone();
+                    let rdi = out.get("rdi").ok_or_else(|| SimpleError::new(format!("Could not read value of rdi")))?.clone();
+                    let rsi = out.get("rsi").ok_or_else(|| SimpleError::new(format!("Could not read value of rsi")))?.clone();
+                    let rdx = out.get("rdx").ok_or_else(|| SimpleError::new(format!("Could not read value of rdx")))?.clone();
+
+                    // This gets a mutable handle to `out` - that means we can't
+                    // read from `out` within this block!
+                    out.get_mut("rip").map(|rip| {
+                        rip.extra = Some(AnalyzedValue::syscall_info(&rax, &rdi, &rsi, &rdx));
+                    });
+                }
+            }
+        }
+
+        Ok(out)
     }
 
     pub fn analyze_code(&self, code: Vec<u8>, harness_path: &Path, show_everything: bool) -> SimpleResult<MandrakeOutput> {
@@ -205,7 +232,10 @@ impl Mandrake {
         step(pid, None).map_err(|e| SimpleError::new(format!("Failed to stop into the shellcode: {}", e)))?;
 
         // At this point, we can proceed to normal analysis
-        self.go(child, &VisibilityConfiguration::harness_visibility())
+        match show_everything {
+            false => self.go(child, &VisibilityConfiguration::full_visibility()),
+            true  => self.go(child, &VisibilityConfiguration::harness_visibility()),
+        }
     }
 
     pub fn analyze_elf(&self, binary: &Path, args: Vec<String>, visibility: &VisibilityConfiguration) -> SimpleResult<MandrakeOutput> {

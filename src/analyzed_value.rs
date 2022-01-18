@@ -13,8 +13,12 @@ use nix::sys::ptrace::{read, AddressType};
 use nix::unistd::Pid;
 use serde::{Serialize, Deserialize};
 
+use crate::syscalls::{SyscallEntry, SYSCALLS};
+
 // We initially read this much so we can look for strings and code
 const INITIAL_SNIPPIT_LENGTH: usize = 128;
+
+const MAX_SYSCALL_MEMORY_SNIPPIT: usize = 8;
 
 /// A serializable, analyzed value.
 ///
@@ -33,9 +37,53 @@ pub struct AnalyzedValue {
 
     // A decoded string (UTF-8), if possible
     pub as_string: Option<String>,
+
+    // Extra info, if we have any
+    pub extra: Option<Vec<String>>,
 }
 
 impl AnalyzedValue {
+    fn syscall_param(s: &SyscallEntry, r: &AnalyzedValue) -> String {
+        if s.is_array {
+            format!("[array of values]")
+        } else if s.is_string {
+            match &r.as_string {
+                Some(s) => format!("`{}`", &s),
+                None => format!("Invalid string: 0x{:08x}", r.value),
+            }
+        } else if s.is_pointer {
+            match &r.memory {
+                Some(mem) => format!("`{}...`", hex::encode(&mem[..MAX_SYSCALL_MEMORY_SNIPPIT])),
+                None => format!("Invalid memory pointer: 0x{:08x}", r.value),
+            }
+        } else {
+            format!("`0x{:08x}`", r.value)
+        }
+    }
+
+    pub fn syscall_info(rax: &AnalyzedValue, rdi: &AnalyzedValue, rsi: &AnalyzedValue, rdx: &AnalyzedValue) -> Vec<String> {
+        match SYSCALLS.get(&rax.value) {
+            Some(s) => {
+                let mut out = vec![format!("Syscall: `{}`", s.name)]; // The syscall number
+
+                if let Some(param) = &s.rdi {
+                    out.push(format!("{} (rdi) = {}", param.field_name, Self::syscall_param(&param, rdi)));
+                }
+
+                if let Some(param) = &s.rsi {
+                    out.push(format!("{} (rsi) = {}", param.field_name, Self::syscall_param(&param, rsi)));
+                }
+
+                if let Some(param) = &s.rdx {
+                    out.push(format!("{} (rdx) = {}", param.field_name, Self::syscall_param(&param, rdx)));
+                }
+
+                out
+            },
+            None => vec![format!("Unknown syscall: `{}`", rax.value)],
+        }
+    }
+
     pub fn new(pid: Pid, value: u64, is_instruction_pointer: bool, snippit_length: usize, minimum_viable_string: usize) -> Self {
         // Figure out the longest value we need
         let bytes_to_get: usize = std::cmp::max(INITIAL_SNIPPIT_LENGTH, snippit_length);
@@ -49,6 +97,7 @@ impl AnalyzedValue {
                     memory: None,
                     as_instruction: None,
                     as_string: None,
+                    extra: None,
                 };
             }
         };
@@ -95,6 +144,7 @@ impl AnalyzedValue {
             memory: Some(data),
             as_instruction: as_instruction,
             as_string: as_string,
+            extra: None,
         }
     }
 
