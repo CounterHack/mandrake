@@ -47,6 +47,10 @@ struct Elf {
     #[clap(flatten)]
     visibility_configuration: VisibilityConfiguration,
 
+    /// Standard in, encoded as hex (eg, "4141414141")
+    #[clap(long)]
+    stdin_data: Option<String>,
+
     /// The ELF executable
     elf: String,
 
@@ -125,7 +129,7 @@ fn main() {
         args.minimum_viable_string,
         Some(args.max_instructions),
         args.ignore_stdout,
-        args.ignore_stderr
+        args.ignore_stderr,
     );
 
     // Check which subcommand they ran
@@ -137,7 +141,7 @@ fn main() {
             }
         },
         Action::Elf(elf_args) => {
-            mandrake.analyze_elf(&Path::new(&elf_args.elf), elf_args.args, &elf_args.visibility_configuration)
+            mandrake.analyze_elf(&Path::new(&elf_args.elf), elf_args.stdin_data, elf_args.args, &elf_args.visibility_configuration)
         },
     };
 

@@ -238,19 +238,40 @@ impl Mandrake {
         }
     }
 
-    pub fn analyze_elf(&self, binary: &Path, args: Vec<String>, visibility: &VisibilityConfiguration) -> SimpleResult<MandrakeOutput> {
+    pub fn analyze_elf(&self, binary: &Path, stdin: Option<String>, args: Vec<String>, visibility: &VisibilityConfiguration) -> SimpleResult<MandrakeOutput> {
+        // Decode the stdin before starting the command, so we don't start the
+        // process if the stdin is badly encoded
+        let stdin = match stdin {
+            Some(stdin) => Some(hex::decode(stdin).map_err(|e| SimpleError::new(format!("Could not parse --stdin-data as a hex string: {}", e)))?),
+            None => None,
+        };
+
         // This spawns the process and calls waitpid(), so it reaches the first
         // system call (execve)
         let mut command = Command::new(binary);
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
 
+        match stdin {
+            // If there's a stdin, use it
+            Some(_) => command.stdin(Stdio::piped()),
+            // If there's no stdin, close it
+            None => command.stdin(Stdio::null()),
+        };
+
         for arg in args {
             command.arg(arg);
         }
 
-        let child = command.spawn_ptrace()
+        let mut child = command.spawn_ptrace()
             .map_err(|e| SimpleError::new(format!("Could not execute testing harness: {}", e)))?;
+
+        if let Some(stdin) = stdin {
+            child.stdin.take()
+                .ok_or_else(|| SimpleError::new(format!("Couldn't get a handle to stdin")))?
+                .write_all(&stdin)
+                .map_err(|e| SimpleError::new(format!("Failed while trying to write to stdin: {}", e)))?;
+        }
 
         // Find the first breakpiont
         let pid = Pid::from_raw(child.id() as i32);
