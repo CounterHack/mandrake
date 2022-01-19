@@ -1,14 +1,5 @@
 A binary analysis / instrumentation library for Rust.
 
-# TODO
-
-* Log other registers (r12, etc)
-  * Update syscall code
-* Display syscalls more nicely
-* Accept stdin input
-* Add stdin and Q&A to the interface
-
-
 # Author
 
 Ron Bowes from Counter Hack

@@ -61,7 +61,7 @@ impl AnalyzedValue {
         }
     }
 
-    pub fn syscall_info(rax: &AnalyzedValue, rdi: &AnalyzedValue, rsi: &AnalyzedValue, rdx: &AnalyzedValue) -> Vec<String> {
+    pub fn syscall_info(rax: &AnalyzedValue, rdi: &AnalyzedValue, rsi: &AnalyzedValue, rdx: &AnalyzedValue, r10: &AnalyzedValue, r8: &AnalyzedValue, r9: &AnalyzedValue) -> Vec<String> {
         match SYSCALLS.get(&rax.value) {
             Some(s) => {
                 let mut out = vec![format!("Syscall: `{}`", s.name)]; // The syscall number
@@ -76,6 +76,18 @@ impl AnalyzedValue {
 
                 if let Some(param) = &s.rdx {
                     out.push(format!("{} (rdx) = {}", param.field_name, Self::syscall_param(&param, rdx)));
+                }
+
+                if let Some(param) = &s.r10 {
+                    out.push(format!("{} (r10) = {}", param.field_name, Self::syscall_param(&param, r10)));
+                }
+
+                if let Some(param) = &s.r8 {
+                    out.push(format!("{} (r8) = {}", param.field_name, Self::syscall_param(&param, r8)));
+                }
+
+                if let Some(param) = &s.r9 {
+                    out.push(format!("{} (r9) = {}", param.field_name, Self::syscall_param(&param, r9)));
                 }
 
                 out

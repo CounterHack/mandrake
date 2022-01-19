@@ -21,7 +21,7 @@
 20,sys_writev,unsigned long fd,const struct iovec *vec,unsigned long vlen
 21,sys_access,const char *filename,int mode
 22,sys_pipe,int *filedes
-23,sys_select,int n,fd_set *inp,fd_set *outp,fd_set*exp,struct timeval *tvp
+23,sys_select,int n,fd_set *inp,fd_set *outp,fd_set *exp,struct timeval *tvp
 24,sys_sched_yield
 25,sys_mremap,unsigned long addr,unsigned long old_len,unsigned long new_len,unsigned long flags,unsigned long new_addr
 26,sys_msync,unsigned long start,size_t len,int flags
@@ -155,7 +155,7 @@
 154,sys_modify_ldt,int func,void *ptr,unsigned long bytecount
 155,sys_pivot_root,const char *new_root,const char *put_old
 156,sys__sysctl,struct __sysctl_args *args
-157,sys_prctl,int option,unsigned long arg2,unsigned long arg3,unsigned long arg4,,unsigned long arg5
+157,sys_prctl,int option,unsigned long arg2,unsigned long arg3,unsigned long arg4,void *unknown,unsigned long arg5
 158,sys_arch_prctl,struct task_struct *task,int code,unsigned long *addr
 159,sys_adjtimex,struct timex *txc_p
 160,sys_setrlimit,unsigned int resource,struct rlimit *rlim

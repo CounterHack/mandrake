@@ -52,6 +52,9 @@ pub struct Syscall {
     pub rdi: Option<SyscallEntry>,
     pub rsi: Option<SyscallEntry>,
     pub rdx: Option<SyscallEntry>,
+    pub r10: Option<SyscallEntry>,
+    pub r8:  Option<SyscallEntry>,
+    pub r9:  Option<SyscallEntry>,
 }
 
 lazy_static! {
@@ -84,6 +87,9 @@ lazy_static! {
                 rdi: record.get(2).map(|r| SyscallEntry::new(r)),
                 rsi: record.get(3).map(|r| SyscallEntry::new(r)),
                 rdx: record.get(4).map(|r| SyscallEntry::new(r)),
+                r10: record.get(5).map(|r| SyscallEntry::new(r)),
+                r8:  record.get(6).map(|r| SyscallEntry::new(r)),
+                r9:  record.get(7).map(|r| SyscallEntry::new(r)),
             };
 
             out.insert(rax, syscall);

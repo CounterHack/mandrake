@@ -182,6 +182,16 @@ impl Mandrake {
             ("rdi".to_string(), AnalyzedValue::new(pid, regs.rdi, false, self.snippit_length, self.minimum_viable_string)),
             ("rbp".to_string(), AnalyzedValue::new(pid, regs.rbp, false, self.snippit_length, self.minimum_viable_string)),
             ("rsp".to_string(), AnalyzedValue::new(pid, regs.rsp, false, self.snippit_length, self.minimum_viable_string)),
+
+            // I guess we should do the boring registers, too...
+            ("r8".to_string(),  AnalyzedValue::new(pid, regs.r8,  false, self.snippit_length, self.minimum_viable_string)),
+            ("r9".to_string(),  AnalyzedValue::new(pid, regs.r9,  false, self.snippit_length, self.minimum_viable_string)),
+            ("r10".to_string(), AnalyzedValue::new(pid, regs.r10, false, self.snippit_length, self.minimum_viable_string)),
+            ("r11".to_string(), AnalyzedValue::new(pid, regs.r11, false, self.snippit_length, self.minimum_viable_string)),
+            ("r12".to_string(), AnalyzedValue::new(pid, regs.r12, false, self.snippit_length, self.minimum_viable_string)),
+            ("r13".to_string(), AnalyzedValue::new(pid, regs.r13, false, self.snippit_length, self.minimum_viable_string)),
+            ("r14".to_string(), AnalyzedValue::new(pid, regs.r14, false, self.snippit_length, self.minimum_viable_string)),
+            ("r15".to_string(), AnalyzedValue::new(pid, regs.r15, false, self.snippit_length, self.minimum_viable_string)),
         ].into_iter().collect();
 
         // Handle special instructions
@@ -195,11 +205,14 @@ impl Mandrake {
                     let rdi = out.get("rdi").ok_or_else(|| SimpleError::new(format!("Could not read value of rdi")))?.clone();
                     let rsi = out.get("rsi").ok_or_else(|| SimpleError::new(format!("Could not read value of rsi")))?.clone();
                     let rdx = out.get("rdx").ok_or_else(|| SimpleError::new(format!("Could not read value of rdx")))?.clone();
+                    let r10 = out.get("r10").ok_or_else(|| SimpleError::new(format!("Could not read value of r10")))?.clone();
+                    let r8  = out.get("r8" ).ok_or_else(|| SimpleError::new(format!("Could not read value of r8" )))?.clone();
+                    let r9  = out.get("r9" ).ok_or_else(|| SimpleError::new(format!("Could not read value of r9" )))?.clone();
 
                     // This gets a mutable handle to `out` - that means we can't
                     // read from `out` within this block!
                     out.get_mut("rip").map(|rip| {
-                        rip.extra = Some(AnalyzedValue::syscall_info(&rax, &rdi, &rsi, &rdx));
+                        rip.extra = Some(AnalyzedValue::syscall_info(&rax, &rdi, &rsi, &rdx, &r10, &r8, &r9));
                     });
                 }
             }
