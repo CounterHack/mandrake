@@ -43,51 +43,92 @@ pub struct AnalyzedValue {
 }
 
 impl AnalyzedValue {
-    fn syscall_param(s: &SyscallEntry, r: &AnalyzedValue) -> String {
+    fn syscall_param(pid: Pid, s: &SyscallEntry, r: &AnalyzedValue) -> String {
         if s.is_array {
-            format!("[array of values]")
+            // Ensure it's a pointer
+            if r.value != 0 {
+                // Create a vector of the arguments
+                let mut out: Vec<String> = Vec::new();
+
+                // Loop through the arguments
+                for i in 0.. {
+                    // Get the address of the next potential string
+                    let addr = Self::get_memory_as_u64(pid, r.value + (i * 8));
+
+                    // Break on invalid memory
+                    let addr = match addr {
+                        Some(a) => a,
+                        None => break,
+                    };
+
+                    // Break on NUL pointer
+                    if addr == 0 {
+                        break;
+                    }
+
+                    // Get the string there
+                    let a = Self::new(pid, addr, false, 0, 0);
+
+                    // Break if there's no string
+                    let as_string = match a.as_string {
+                        Some(as_string) => as_string,
+                        None => break,
+                    };
+
+                    // Add it to the list and continue
+                    out.push(format!("\"{}\"", as_string));
+                }
+
+                format!("[{}]", out.join(", "))
+            } else {
+                "(Empty array)".to_string()
+            }
         } else if s.is_string {
             match &r.as_string {
                 Some(s) => format!("`{}`", &s),
                 None => format!("Invalid string: 0x{:08x}", r.value),
             }
         } else if s.is_pointer {
-            match &r.memory {
-                Some(mem) => format!("`{}...`", hex::encode(&mem[..MAX_SYSCALL_MEMORY_SNIPPIT])),
-                None => format!("Invalid memory pointer: 0x{:08x}", r.value),
+            if r.value == 0 {
+                "(nil)".to_string()
+            } else {
+                match &r.memory {
+                    Some(mem) => format!("`{}...`", hex::encode(&mem[..MAX_SYSCALL_MEMORY_SNIPPIT])),
+                    None => format!("Invalid memory pointer: 0x{:08x}", r.value),
+                }
             }
         } else {
             format!("`0x{:08x}`", r.value)
         }
     }
 
-    pub fn syscall_info(rax: &AnalyzedValue, rdi: &AnalyzedValue, rsi: &AnalyzedValue, rdx: &AnalyzedValue, r10: &AnalyzedValue, r8: &AnalyzedValue, r9: &AnalyzedValue) -> Vec<String> {
+    pub fn syscall_info(pid: Pid, rax: &AnalyzedValue, rdi: &AnalyzedValue, rsi: &AnalyzedValue, rdx: &AnalyzedValue, r10: &AnalyzedValue, r8: &AnalyzedValue, r9: &AnalyzedValue) -> Vec<String> {
         match SYSCALLS.get(&rax.value) {
             Some(s) => {
                 let mut out = vec![format!("Syscall: `{}`", s.name)]; // The syscall number
 
                 if let Some(param) = &s.rdi {
-                    out.push(format!("{} (rdi) = {}", param.field_name, Self::syscall_param(&param, rdi)));
+                    out.push(format!("{} (rdi) = {}", param.field_name, Self::syscall_param(pid, &param, rdi)));
                 }
 
                 if let Some(param) = &s.rsi {
-                    out.push(format!("{} (rsi) = {}", param.field_name, Self::syscall_param(&param, rsi)));
+                    out.push(format!("{} (rsi) = {}", param.field_name, Self::syscall_param(pid, &param, rsi)));
                 }
 
                 if let Some(param) = &s.rdx {
-                    out.push(format!("{} (rdx) = {}", param.field_name, Self::syscall_param(&param, rdx)));
+                    out.push(format!("{} (rdx) = {}", param.field_name, Self::syscall_param(pid, &param, rdx)));
                 }
 
                 if let Some(param) = &s.r10 {
-                    out.push(format!("{} (r10) = {}", param.field_name, Self::syscall_param(&param, r10)));
+                    out.push(format!("{} (r10) = {}", param.field_name, Self::syscall_param(pid, &param, r10)));
                 }
 
                 if let Some(param) = &s.r8 {
-                    out.push(format!("{} (r8) = {}", param.field_name, Self::syscall_param(&param, r8)));
+                    out.push(format!("{} (r8) = {}", param.field_name, Self::syscall_param(pid, &param, r8)));
                 }
 
                 if let Some(param) = &s.r9 {
-                    out.push(format!("{} (r9) = {}", param.field_name, Self::syscall_param(&param, r9)));
+                    out.push(format!("{} (r9) = {}", param.field_name, Self::syscall_param(pid, &param, r9)));
                 }
 
                 out
@@ -156,6 +197,9 @@ impl AnalyzedValue {
             memory: Some(data),
             as_instruction: as_instruction,
             as_string: as_string,
+
+            // We need all the registers to figure out syscall details, so mark
+            // this as None for now
             extra: None,
         }
     }
@@ -175,6 +219,13 @@ impl AnalyzedValue {
         }
 
         Some(data)
+    }
+
+    fn get_memory_as_u64(pid: Pid, addr: u64) -> Option<u64> {
+        match read(pid, addr as AddressType) {
+            Ok(d) => Some(d as u64),
+            Err(_e) => None,
+        }
     }
 
 }

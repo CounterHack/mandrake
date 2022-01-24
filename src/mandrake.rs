@@ -7,6 +7,7 @@ use nix::sys::ptrace::{getregs, step, cont, kill};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{wait, WaitStatus};
 use nix::unistd::Pid;
+
 use simple_error::{bail, SimpleResult, SimpleError};
 use spawn_ptrace::CommandPtraceSpawn;
 
@@ -194,7 +195,7 @@ impl Mandrake {
             ("r15".to_string(), AnalyzedValue::new(pid, regs.r15, false, self.snippit_length, self.minimum_viable_string)),
         ].into_iter().collect();
 
-        // Handle special instructions
+        // Handle syscalls - this needs to come after because we need all values
         if let Some(rip) = &out.get("rip") {
             if let Some(instruction) = &rip.as_instruction {
                 if instruction == "syscall" {
@@ -212,7 +213,7 @@ impl Mandrake {
                     // This gets a mutable handle to `out` - that means we can't
                     // read from `out` within this block!
                     out.get_mut("rip").map(|rip| {
-                        rip.extra = Some(AnalyzedValue::syscall_info(&rax, &rdi, &rsi, &rdx, &r10, &r8, &r9));
+                        rip.extra = Some(AnalyzedValue::syscall_info(pid, &rax, &rdi, &rsi, &rdx, &r10, &r8, &r9));
                     });
                 }
             }
