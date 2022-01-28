@@ -22,9 +22,9 @@ Mandrake is a framework for executing and instrumenting machine code or ELF
 binaries. It can execute a full binary or a block of hex-encoded machine code,
 saving the output results as JSON or YAML.
 
-The goal of Mandrake is to help analysts understand or evalauate unknown code.
+The goal of Mandrake is to help analysts understand or evaluate unknown code.
 While most disassembly tools (such as `ndisasm`) will do a great job of showing
-what each instruction and opcode do, `mandrake` goes a step further and
+what each instruction and opcode do, Mandrake goes a step further and
 *executes* the code, showing what actually ran.
 
 This means that packed, self-modified, and looping code can be analyzed much
@@ -39,7 +39,7 @@ don't want to analyze malicious code on a production system!*
 *This must be run on an x64-based Linux system!*
 
 The best way to execute `mandrake` is to check it out from
-[the Github repo](https://github.com/counterhack/mandrake), then build + run
+[the GitHub repo](https://github.com/counterhack/mandrake), then build + run
 with either `cargo` (the Rust toolchain) or `docker`.
 
 ## Executing with cargo
@@ -103,9 +103,9 @@ To use this, the simplest way is to check out the source, install the Rust
 build environment (i.e., `cargo`), and just use it right from the source tree.
 So far, we haven't really done any fancy releases.
 
-For the remainder, of this README, we will assume you are executing using
-a `mandrake` binary. You can just as easily use `cargo run --` anywhere you
-see `mandrake`.
+For the remainder of this README, we will assume you are executing using a
+`mandrake` binary. You can just as easily use `cargo run --` anywhere you see
+`mandrake`.
 
 Mandrake has two modes, implemented as subcommands - `code` and `elf`.  Run
 Mandrake with `--help` to see the full options:
@@ -120,7 +120,7 @@ $ mandrake elf --help
 
 To use Mandrake to analyze raw machine code, you need two things:
 
-* The `harness` executable - you'll get this when you check out the codebase, but you can also get it [directly from Github](https://github.com/CounterHack/mandrake/blob/main/harness/harness)
+* The `harness` executable - you'll get this when you check out the codebase, but you can also get it [directly from GitHub](https://github.com/CounterHack/mandrake/blob/main/harness/harness)
 * The hex-encoded machine code
 
 How you get hex-encoded machine code is sort of up to you, but if you want
