@@ -7,6 +7,7 @@ use nix::sys::ptrace::{getregs, step, cont, kill};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{wait, WaitStatus};
 use nix::unistd::Pid;
+
 use simple_error::{bail, SimpleResult, SimpleError};
 use spawn_ptrace::CommandPtraceSpawn;
 
@@ -78,6 +79,17 @@ impl Mandrake {
                                 }
                             }
 
+                            // Count the instructions
+                            result.instructions_executed += 1;
+
+                            // Count the actual instructions executed (even if they're invisible)
+                            if let Some(max_instructions) = self.max_logged_instructions {
+                                if result.instructions_executed >= max_instructions {
+                                    result.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", max_instructions));
+                                    break;
+                                }
+                            }
+
                             // Check if we're supposed to see this
                             if !visibility.is_visible(rip.value) {
                                 continue;
@@ -88,17 +100,7 @@ impl Mandrake {
                                 result.starting_address = Some(rip.value);
                             }
 
-                            // Count the instructions
-                            result.instructions_executed += 1;
-
                             result.history.push(regs);
-
-                            if let Some(max_instructions) = self.max_logged_instructions {
-                                if result.history.len() >= max_instructions {
-                                    result.exit_reason = Some(format!("Execution stopped at instruction cap (max instructions: {})", max_instructions));
-                                    break;
-                                }
-                            }
 
                             continue;
                         },
@@ -126,6 +128,10 @@ impl Mandrake {
 
         // I don't know why, but this fixes a random timeout that sometimes breaks
         // this :-/
+        //
+        // As of 2022-01, I have no idea if this is still needed or if the bug
+        // this fixed is long-gone, but I'm too afraid to try because the bug
+        // was always sporadic :)
         println!("");
 
         // Whatever situation we're in, we need to make sure the process is dead
@@ -167,7 +173,7 @@ impl Mandrake {
         };
 
         // Analyze and save each one
-        Ok(vec![
+        let mut out: HashMap<String, AnalyzedValue> = vec![
             ("rip".to_string(), AnalyzedValue::new(pid, regs.rip, true,  self.snippit_length, self.minimum_viable_string)),
             ("rax".to_string(), AnalyzedValue::new(pid, regs.rax, false, self.snippit_length, self.minimum_viable_string)),
             ("rbx".to_string(), AnalyzedValue::new(pid, regs.rbx, false, self.snippit_length, self.minimum_viable_string)),
@@ -177,12 +183,48 @@ impl Mandrake {
             ("rdi".to_string(), AnalyzedValue::new(pid, regs.rdi, false, self.snippit_length, self.minimum_viable_string)),
             ("rbp".to_string(), AnalyzedValue::new(pid, regs.rbp, false, self.snippit_length, self.minimum_viable_string)),
             ("rsp".to_string(), AnalyzedValue::new(pid, regs.rsp, false, self.snippit_length, self.minimum_viable_string)),
-        ].into_iter().collect())
+
+            // I guess we should do the boring registers, too...
+            ("r8".to_string(),  AnalyzedValue::new(pid, regs.r8,  false, self.snippit_length, self.minimum_viable_string)),
+            ("r9".to_string(),  AnalyzedValue::new(pid, regs.r9,  false, self.snippit_length, self.minimum_viable_string)),
+            ("r10".to_string(), AnalyzedValue::new(pid, regs.r10, false, self.snippit_length, self.minimum_viable_string)),
+            ("r11".to_string(), AnalyzedValue::new(pid, regs.r11, false, self.snippit_length, self.minimum_viable_string)),
+            ("r12".to_string(), AnalyzedValue::new(pid, regs.r12, false, self.snippit_length, self.minimum_viable_string)),
+            ("r13".to_string(), AnalyzedValue::new(pid, regs.r13, false, self.snippit_length, self.minimum_viable_string)),
+            ("r14".to_string(), AnalyzedValue::new(pid, regs.r14, false, self.snippit_length, self.minimum_viable_string)),
+            ("r15".to_string(), AnalyzedValue::new(pid, regs.r15, false, self.snippit_length, self.minimum_viable_string)),
+        ].into_iter().collect();
+
+        // Handle syscalls - this needs to come after because we need all values
+        if let Some(rip) = &out.get("rip") {
+            if let Some(instruction) = &rip.as_instruction {
+                if instruction == "syscall" {
+                    // Load + clone registers before getting a mutable instance of
+                    // rip (Rust smartly doesn't let us read and write a variable
+                    // at the same time!)
+                    let rax = out.get("rax").ok_or_else(|| SimpleError::new(format!("Could not read value of rax")))?.clone();
+                    let rdi = out.get("rdi").ok_or_else(|| SimpleError::new(format!("Could not read value of rdi")))?.clone();
+                    let rsi = out.get("rsi").ok_or_else(|| SimpleError::new(format!("Could not read value of rsi")))?.clone();
+                    let rdx = out.get("rdx").ok_or_else(|| SimpleError::new(format!("Could not read value of rdx")))?.clone();
+                    let r10 = out.get("r10").ok_or_else(|| SimpleError::new(format!("Could not read value of r10")))?.clone();
+                    let r8  = out.get("r8" ).ok_or_else(|| SimpleError::new(format!("Could not read value of r8" )))?.clone();
+                    let r9  = out.get("r9" ).ok_or_else(|| SimpleError::new(format!("Could not read value of r9" )))?.clone();
+
+                    // This gets a mutable handle to `out` - that means we can't
+                    // read from `out` within this block!
+                    out.get_mut("rip").map(|rip| {
+                        rip.extra = Some(AnalyzedValue::syscall_info(pid, &rax, &rdi, &rsi, &rdx, &r10, &r8, &r9));
+                    });
+                }
+            }
+        }
+
+        Ok(out)
     }
 
-    pub fn analyze_code(&self, code: Vec<u8>, harness_path: &Path) -> SimpleResult<MandrakeOutput> {
+    pub fn analyze_code(&self, code: Vec<u8>, harness_path: &Path, show_everything: bool) -> SimpleResult<MandrakeOutput> {
         if !harness_path.exists() {
-            bail!("Could not find the execution harness: {:?}", harness_path);
+            bail!("Could not find the execution harness: {:?} - use --harness to specify the path to the 'harness' executable (which is available on https://github.com/counterhack)", harness_path);
         }
 
         let child = Command::new(harness_path)
@@ -204,22 +246,46 @@ impl Mandrake {
         step(pid, None).map_err(|e| SimpleError::new(format!("Failed to stop into the shellcode: {}", e)))?;
 
         // At this point, we can proceed to normal analysis
-        self.go(child, &VisibilityConfiguration::harness_visibility())
+        match show_everything {
+            false => self.go(child, &VisibilityConfiguration::full_visibility()),
+            true  => self.go(child, &VisibilityConfiguration::harness_visibility()),
+        }
     }
 
-    pub fn analyze_elf(&self, binary: &Path, args: Vec<String>, visibility: &VisibilityConfiguration) -> SimpleResult<MandrakeOutput> {
+    pub fn analyze_elf(&self, binary: &Path, stdin: Option<String>, args: Vec<String>, visibility: &VisibilityConfiguration) -> SimpleResult<MandrakeOutput> {
+        // Decode the stdin before starting the command, so we don't start the
+        // process if the stdin is badly encoded
+        let stdin = match stdin {
+            Some(stdin) => Some(hex::decode(stdin).map_err(|e| SimpleError::new(format!("Could not parse --stdin-data as a hex string: {}", e)))?),
+            None => None,
+        };
+
         // This spawns the process and calls waitpid(), so it reaches the first
         // system call (execve)
         let mut command = Command::new(binary);
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
 
+        match stdin {
+            // If there's a stdin, use it
+            Some(_) => command.stdin(Stdio::piped()),
+            // If there's no stdin, close it
+            None => command.stdin(Stdio::null()),
+        };
+
         for arg in args {
             command.arg(arg);
         }
 
-        let child = command.spawn_ptrace()
+        let mut child = command.spawn_ptrace()
             .map_err(|e| SimpleError::new(format!("Could not execute testing harness: {}", e)))?;
+
+        if let Some(stdin) = stdin {
+            child.stdin.take()
+                .ok_or_else(|| SimpleError::new(format!("Couldn't get a handle to stdin")))?
+                .write_all(&stdin)
+                .map_err(|e| SimpleError::new(format!("Failed while trying to write to stdin: {}", e)))?;
+        }
 
         // Find the first breakpiont
         let pid = Pid::from_raw(child.id() as i32);

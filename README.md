@@ -6,6 +6,16 @@ A binary analysis / instrumentation library for Rust.
 
 License: MIT
 
+# Acknowledgements
+
+Thanks to folks:
+
+* Daniel Pendolino, for helping me with the initial idea
+* Josh Wright, for helping with testing and language
+* Ed Skoudis, for giving me permission to release this open source
+* Counter Hack and SANS in general, for giving me the time I needed to write this, as well as encouragement
+* Ryan Chapman, for their amazing [syscall table](https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/) that I parsed into [/src/syscalls.csv](a CSV file)
+
 # Purpose
 
 Mandrake is a framework for executing and instrumenting machine code or ELF
@@ -17,9 +27,8 @@ While most disassembly tools (such as `ndisasm`) will do a great job of showing
 what each instruction and opcode do, `mandrake` goes a step further and
 *executes* the code, showing what actually ran.
 
-> This means that packed, self-modified, and looping code can be analyzed much
-> more easily, since you'll see very clearly which syscalls are being
-> performed!
+This means that packed, self-modified, and looping code can be analyzed much
+more easily, since you'll see very clearly which syscalls are being performed!
 
 *Warning: This DOES run the code on your machine, using
 [ptrace](https://man7.org/linux/man-pages/man2/ptrace.2.html). You probably
@@ -27,9 +36,66 @@ don't want to analyze malicious code on a production system!*
 
 # Installation
 
-Right now, download + build using `cargo`. That's described later.
+*This must be run on an x64-based Linux system!*
 
-Later, we'll need to publish properly on `cargo`.
+The best way to execute `mandrake` is to check it out from
+[the Github repo](https://github.com/counterhack/mandrake), then build + run
+with either `cargo` (the Rust toolchain) or `docker`.
+
+## Executing with cargo
+
+To run with `cargo`, you need the `edition2021` edition of Rust (which usually
+means installing [rustup](https://rustup.rs/) (or using the `rust:latest`
+Docker image). Probably distros will start including that edition in their
+repos eventually, and I hate depending on it, but some of the dependencies I
+pull in require it.
+
+Once you have `cargo` and `edition2021`, you can build and run from source:
+
+```
+$ git clone https://github.com/CounterHack/mandrake.git
+$ cd mandrake
+$ mandrake --help
+```
+
+## Installing with docker
+
+Alternatively, we include a `Makefile` that just uses the `rust:latest` Docker
+container. You can run `make` to use that:
+
+```
+$ make run
+docker build . -t mandrake-build -f Dockerfile.build
+
+[...]
+
+Successfully tagged mandrake-execute:latest
+
+To execute, run:
+
+docker run --rm -ti mandrake-execute --help
+```
+
+Or you can use an interactive Docker environment directly:
+
+```
+$ docker run -ti -v $PWD:/src rust:latest /bin/bash
+root@6764c399bc84:/# cd src
+root@6764c399bc84:/src# mandrake --help
+```
+
+## Building a Binary
+
+We have included a Dockerfile to build binary releases. To build a release,
+execute `make` in the source directory. That will use `docker` to build
+releases in the `build/` directory.
+
+Once those are built, you should be able to execute `build/mandrake` with no
+extra dependencies (besides the hardness, which will also be compiled into
+`build/`.
+
+*We plan to do proper binary releases but have not yet. By the time this is
+public, we'll have a link here.*
 
 # Usage
 
@@ -37,13 +103,17 @@ To use this, the simplest way is to check out the source, install the Rust
 build environment (i.e., `cargo`), and just use it right from the source tree.
 So far, we haven't really done any fancy releases.
 
+For the remainder, of this README, we will assume you are executing using
+a `mandrake` binary. You can just as easily use `cargo run --` anywhere you
+see `mandrake`.
+
 Mandrake has two modes, implemented as subcommands - `code` and `elf`.  Run
 Mandrake with `--help` to see the full options:
 
 ```
-$ cargo run -- --help
-$ cargo run -- code --help
-$ cargo run -- elf --help
+$ mandrake --help
+$ mandrake code --help
+$ mandrake elf --help
 ```
 
 ## Analyzing Raw Code
@@ -57,11 +127,10 @@ How you get hex-encoded machine code is sort of up to you, but if you want
 something simple to test, try `c3` (`ret`) or `4831c048ffc0c3`
 (`xor rax, rax` / `inc rax` / `ret`) - aka, `return 1`.
 
-You can either run the `mandrake` executable, or use `cargo run --` as shown
-below:
+Here is an example:
 
 ```
-$ cargo run -- --snippit-length 4 code 'c3'
+$ mandrake --snippit-length 4 code 'c3'
 
 {
   "success": true,
@@ -95,7 +164,7 @@ $ cargo run -- --snippit-length 4 code 'c3'
 This example also demonstrates how to use a custom path to the `harness`:
 
 ```
-$ cargo run -- --snippit-length 4 code --harness=./harness/harness '4831c048ffc0c3'
+$ mandrake --snippit-length 4 code --harness=./harness/harness '4831c048ffc0c3'
 
 {
   "success": true,
@@ -137,7 +206,7 @@ gracefully.  This example runs the shellcode `push 0x41414141` / `ret`, which
 will crash at `0x41414141`:
 
 ```
-$ cargo run -- --snippit-length 4 code --harness=./harness/harness '6841414141c3'
+$ mandrake --snippit-length 4 code --harness=./harness/harness '6841414141c3'
 {
   "success": true,
   "pid": 1054409,
@@ -156,7 +225,7 @@ $ cargo run -- --snippit-length 4 code --harness=./harness/harness '6841414141c3
 Mandrake can also capture standard output:
 
 ```
-$ cargo run -- --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7c00100000048c7c7010000005e48c7c20c0000000f05c3'
+$ mandrake --snippit-length 4 code 'e80d00000048656c6c6f20576f726c64210048c7c00100000048c7c7010000005e48c7c20c0000000f05c3'
 {
   "success": true,
   "pid": 1055334,
@@ -217,7 +286,7 @@ $ gcc -o demo -O0 -masm=intel --no-pie demo.c
 When you execute it in Mandrake, you will see the three `nop` instructions:
 
 ```
-$ cargo run -- --snippit-length 4 elf ./demo
+$ mandrake --snippit-length 4 elf ./demo
 {
   "success": true,
   "pid": 1121316,
@@ -264,7 +333,7 @@ $ gcc -o demo2 -O0 -masm=intel --no-pie demo2.c
 If we try to instrument `demo2`, we quickly run into our execution cap:
 
 ```
-$ cargo run -- --snippit-length 4 elf ./demo2 abc
+$ mandrake --snippit-length 4 elf ./demo2 abc
 
 [...]
 "exit_reason": "Execution stopped at instruction cap (max instructions: 128)",
@@ -273,7 +342,7 @@ $ cargo run -- --snippit-length 4 elf ./demo2 abc
 We can raise that, but we end up with a whole lot of output:
 
 ```
-$ cargo run -- --max-instructions 10000 --snippit-length 4 elf ./demo2 abc
+$ mandrake --max-instructions 10000 --snippit-length 4 elf ./demo2 abc
 [...]
 {
   "instructions_executed": 3209,
@@ -291,7 +360,7 @@ execute it, and have a look at the starting address:
 
 ```
 $ echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
-$ cargo run -- --max-instructions 1 --snippit-length 4 elf ./demo2 abc
+$ mandrake --max-instructions 1 --snippit-length 4 elf ./demo2 abc
 [...]
 {
   "starting_address": 93824992235899,
@@ -306,16 +375,17 @@ address is 0x555555550000 when compared. The mask can be changed with
 `--hidden-mask` if you want, but we don't need to:
 
 ```
-$ cargo run -- --output-format=json --snippit-length 4 elf ./demo2 --visible-address 0x0000555555550000
+$ mandrake --output-format=json --snippit-length 4 elf ./demo2 --visible-address 0x0000555555550000
 [...]
 {
   "starting_address": 93824992235899,
-  "instructions_executed": 13,
+  "instructions_executed": 3209,
   "success": true,
 [...]
 ```
 
-Much better!
+Note that while 3209 instructions are executed, the results only contain 13
+entries!
 
 ## What do I do with all that JSON?
 

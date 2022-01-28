@@ -1,13 +1,11 @@
-# cargo-features = ["strip"]
-
 [package]
 name = "mandrake"
 authors = ["Ron Bowes <ron@counterhack.com>"]
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 description = "Mandrake is an open-source machine code analyzer / instrumenter"
 homepage = "https://github.com/counterhack/mandrake"
-repo = "https://github.com/counterhack/mandrake"
+repository = "https://github.com/counterhack/mandrake"
 license = "mit"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -29,6 +27,13 @@ serde_json = "~1.0.53"
 serde_yaml = "~0.8.23"
 serde-pickle = "~1.1.0"
 base64 = "~0.12.3"
+
+# Used to load syscall data
+lazy_static = "~1.4.0"
+csv = "~1.1.6"
+
+# Used to read syscall file
+regex = "~1.5.4"
 
 [profile.release]
 # strip = "debuginfo"

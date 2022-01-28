@@ -47,6 +47,10 @@ struct Elf {
     #[clap(flatten)]
     visibility_configuration: VisibilityConfiguration,
 
+    /// Standard in, encoded as hex (eg, "4141414141")
+    #[clap(long)]
+    stdin_data: Option<String>,
+
     /// The ELF executable
     elf: String,
 
@@ -63,6 +67,11 @@ struct Code {
     /// The path to the required harness
     #[clap(long, default_value_t = String::from("./harness/harness"))]
     harness: String,
+
+    /// If set, doesn't hide instructions executed outside of the harness
+    /// (helpful if, say, you're analyzing shellcode that allocates memory)
+    #[clap(long)]
+    show_everything: bool,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -120,19 +129,19 @@ fn main() {
         args.minimum_viable_string,
         Some(args.max_instructions),
         args.ignore_stdout,
-        args.ignore_stderr
+        args.ignore_stderr,
     );
 
     // Check which subcommand they ran
     let result = match args.action {
         Action::Code(code_args) => {
             match hex::decode(code_args.code) {
-                Ok(code) => mandrake.analyze_code(code, &Path::new(&code_args.harness)),
+                Ok(code) => mandrake.analyze_code(code, &Path::new(&code_args.harness), code_args.show_everything),
                 Err(e) => Err(SimpleError::new(format!("Could not decode hex: {}", e))),
             }
         },
         Action::Elf(elf_args) => {
-            mandrake.analyze_elf(&Path::new(&elf_args.elf), elf_args.args, &elf_args.visibility_configuration)
+            mandrake.analyze_elf(&Path::new(&elf_args.elf), elf_args.stdin_data, elf_args.args, &elf_args.visibility_configuration)
         },
     };
 

@@ -48,6 +48,16 @@ impl VisibilityConfiguration {
         }
     }
 
+    /// Settings where everything is visible
+    pub fn full_visibility() -> Self {
+        Self {
+            hidden_address:          None,
+            hidden_mask:             None,
+            visible_address:         None,
+            visible_mask:            None,
+        }
+    }
+
     pub fn is_visible(&self, address: u64) -> bool {
         // Suppress addresses that match the hidden_address / hidden_mask, if set
         if let Some(hidden_address) = self.hidden_address {

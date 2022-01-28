@@ -1,11 +1,20 @@
 # Use a container name based on the folder name (probably "build-mandrake")
-C?=build-$(shell basename `pwd`)
+BUILD?=$(shell basename `pwd`)-build
+EXECUTE?=$(shell basename `pwd`)-execute
 
 # This kicks up docker to build the rest
 # (Probably shouldn't be customized)
-all:
-	docker build . -t ${C} -f Dockerfile.build
-	docker run --rm -v ${PWD}:/src --env UID=$(shell id -u) --env GID=$(shell id -g) -ti ${C}
+all: src/*.rs
+	docker build . -t ${BUILD} -f Dockerfile.build
+	docker run --rm -v ${PWD}:/src --env UID=$(shell id -u) --env GID=$(shell id -g) -ti ${BUILD}
+
+run: all
+	docker build . -t ${EXECUTE}
+
+	@echo ""
+	@echo "To execute, run:"
+	@echo ""
+	@echo "docker run --rm -ti ${EXECUTE} --help"
 
 # This runs inside Docker, customize this part!
 indocker:
@@ -24,4 +33,4 @@ indocker:
 	chown -R ${UID}:${GID} .
 
 clean:
-	rm -f target
+	rm -rf target build
