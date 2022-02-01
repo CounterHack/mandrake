@@ -38,6 +38,9 @@ pub struct AnalyzedValue {
     // A decoded string (UTF-8), if possible
     pub as_string: Option<String>,
 
+    // Keep track of what's an instruction pointer (for nicer output)
+    pub is_instruction_pointer: bool,
+
     // Extra info, if we have any
     pub extra: Option<Vec<String>>,
 }
@@ -150,6 +153,7 @@ impl AnalyzedValue {
                     memory: None,
                     as_instruction: None,
                     as_string: None,
+                    is_instruction_pointer: is_instruction_pointer,
                     extra: None,
                 };
             }
@@ -197,6 +201,7 @@ impl AnalyzedValue {
             memory: Some(data),
             as_instruction: as_instruction,
             as_string: as_string,
+            is_instruction_pointer: is_instruction_pointer,
 
             // We need all the registers to figure out syscall details, so mark
             // this as None for now
@@ -232,7 +237,11 @@ impl AnalyzedValue {
 
 impl fmt::Display for AnalyzedValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "0x{:08x}", self.value)
+        if self.is_instruction_pointer {
+            write!(f, "0x{:08x} {}", self.value, self.as_instruction.as_ref().unwrap_or(&"(bad)".to_string()))
+        } else {
+            write!(f, "0x{:08x}", self.value)
+        }
     }
 }
 
