@@ -418,14 +418,18 @@ run the actual application for up-to-date help!
 
 ```
 $ mandrake --help
-Mandrake 0.1.0
+Mandrake 0.1.1
 Ron Bowes <ron@counterhack.com>
-Mandrake is an open-source machine code analyzer / instrumenter written in Rust
+Mandrake is an open-source machine code analyzer / instrumenter
 
 USAGE:
     mandrake [OPTIONS] <SUBCOMMAND>
 
 OPTIONS:
+        --follow-exec-syscalls
+            Enable to follow exec syscalls (usually not desirable, because exec starts a process
+            from scratch and following that is very slow)
+
     -h, --help
             Print help information
 
@@ -443,7 +447,7 @@ OPTIONS:
             The number of consecutive ASCII bytes to be considered a string [default: 6]
 
     -o, --output-format <OUTPUT_FORMAT>
-            The output format ("JSON", "YAML", or "Pickle") [default: JSON]
+            The output format ("JSON", "YAML", "Plaintext", or "Pickle") [default: JSON]
 
     -s, --snippit-length <SNIPPIT_LENGTH>
             The amount of context memory to read [default: 64]
@@ -459,7 +463,7 @@ SUBCOMMANDS:
 
 ```
 $ mandrake code --help
-mandrake-code 0.1.0
+mandrake-code 0.1.1
 Ron Bowes <ron@counterhack.com>
 Analyze raw machine code using a harness
 
@@ -477,7 +481,7 @@ OPTIONS:
 
 ```
 $ mandrake elf --help
-mandrake-elf 0.1.0
+mandrake-elf 0.1.1
 Ron Bowes <ron@counterhack.com>
 Analyze an ELF file (Linux executable)
 
