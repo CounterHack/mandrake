@@ -162,6 +162,7 @@ impl Mandrake {
                         Signal::SIGKILL => { result.exit_reason = Some(format!("Execution was killed (SIGKILL) @ {}", rip)); break; },
                         Signal::SIGSEGV => { result.exit_reason = Some(format!("Execution crashed with a segmentation fault (SIGSEGV) @ {}", rip)); break; },
                         Signal::SIGTERM => { result.exit_reason = Some(format!("Execution was terminated (SIGTERM) @ {}", rip)); break; },
+                        Signal::SIGCHLD => { result.exit_reason = Some(format!("Execution ended when child process ended (SIGCHLD)")); break; },
 
                         _ => { result.exit_reason = Some(format!("Execution stopped by unexpected signal: {}", sig)); break; }
                     };
