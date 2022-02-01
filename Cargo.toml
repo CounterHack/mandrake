@@ -1,7 +1,7 @@
 [package]
 name = "mandrake"
 authors = ["Ron Bowes <ron@counterhack.com>"]
-version = "0.1.1-beta"
+version = "0.1.1"
 edition = "2021"
 description = "Mandrake is an open-source machine code analyzer / instrumenter"
 homepage = "https://github.com/counterhack/mandrake"
