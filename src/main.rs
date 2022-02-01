@@ -14,6 +14,7 @@ use mandrake::visibility_configuration::VisibilityConfiguration;
 enum OutputFormat {
     JSON,
     YAML,
+    PLAINTEXT,
     PICKLE,
 }
 
@@ -22,9 +23,11 @@ impl FromStr for OutputFormat {
 
     fn from_str(input: &str) -> Result<OutputFormat, Self::Err> {
         match &input.to_lowercase()[..] {
-            "json"    => Ok(OutputFormat::JSON),
-            "yaml"    => Ok(OutputFormat::YAML),
-            "pickle"  => Ok(OutputFormat::PICKLE),
+            "json"   => Ok(OutputFormat::JSON),
+            "yaml"   => Ok(OutputFormat::YAML),
+            "pickle" => Ok(OutputFormat::PICKLE),
+            "plaintext" | "text" => Ok(OutputFormat::PLAINTEXT),
+
             _       => bail!("Unknown format: {}", input),
         }
     }
@@ -33,9 +36,10 @@ impl FromStr for OutputFormat {
 impl fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::JSON   => write!(f, "JSON"),
-            Self::YAML   => write!(f, "YAML"),
-            Self::PICKLE => write!(f, "PICKLE"),
+            Self::JSON      => write!(f, "JSON"),
+            Self::YAML      => write!(f, "YAML"),
+            Self::PICKLE    => write!(f, "PICKLE"),
+            Self::PLAINTEXT => write!(f, "PLAINTEXT"),
         }
     }
 }
@@ -87,7 +91,7 @@ enum Action {
 #[derive(Parser, Debug)]
 #[clap(name = "Mandrake", about, version, author)]
 struct Args {
-    /// The output format ("JSON", "YAML", or "Pickle")
+    /// The output format ("JSON", "YAML", "Plaintext", or "Pickle")
     #[clap(short, long, default_value_t = OutputFormat::JSON)]
     output_format: OutputFormat,
 
@@ -111,6 +115,10 @@ struct Args {
     #[clap(long)]
     ignore_stderr: bool,
 
+    /// Enable to follow exec syscalls (usually not desirable, because exec starts a process from scratch and following that is very slow)
+    #[clap(long)]
+    follow_exec_syscalls: bool,
+
     #[clap(subcommand)]
     action: Action,
 }
@@ -130,6 +138,7 @@ fn main() {
         Some(args.max_instructions),
         args.ignore_stdout,
         args.ignore_stderr,
+        args.follow_exec_syscalls,
     );
 
     // Check which subcommand they ran
@@ -155,7 +164,33 @@ fn main() {
                 println!("import pickle");
                 println!();
                 println!("pickle.loads(base64.b64decode(\"{}\"))", base64::encode(serde_pickle::to_vec(&r, Default::default()).unwrap()));
-            }
+            },
+            OutputFormat::PLAINTEXT => {
+                for entry in r.history {
+                    match entry.get("rip") {
+                        Some(entry) => {
+                            println!("{}", entry);
+                        },
+                        None => {
+                            eprintln!("Missing rip in entry");
+                        },
+                    }
+                }
+
+                if let Some(stdout) = r.stdout {
+                    if stdout != "" {
+                        println!();
+                        println!("Stdout: {}", stdout);
+                    }
+                }
+
+                if let Some(stderr) = r.stderr {
+                    if stderr != "" {
+                        println!();
+                        println!("stderr: {}", stderr);
+                    }
+                }
+            },
         },
         Err(e) => eprintln!("Execution failed: {}", e.to_string()),
     };

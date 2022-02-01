@@ -23,16 +23,34 @@ pub struct Mandrake {
     max_logged_instructions: Option<usize>,
     capture_stdout:          bool,
     capture_stderr:          bool,
+    follow_exec:             bool,
+}
+
+const EXECVE_NUM: u64 = 59;
+
+/// Performs a wait() then cont().
+///
+/// Waits for the current operation to complete (which is a step), then
+/// continues execution
+fn resume_execution(pid: Pid) -> SimpleResult<()> {
+    wait()
+        .map_err(|e| SimpleError::new(&format!("Couldn't step over breakpoint: {}", e)))?;
+
+    cont(pid, None)
+        .map_err(|e| SimpleError::new(&format!("Couldn't resume execution after breakpoint: {}", e)))?;
+
+    Ok(())
 }
 
 impl Mandrake {
-    pub fn new(snippit_length: usize, minimum_viable_string: usize, max_logged_instructions: Option<usize>, ignore_stdout: bool, ignore_stderr: bool) -> Self {
+    pub fn new(snippit_length: usize, minimum_viable_string: usize, max_logged_instructions: Option<usize>, ignore_stdout: bool, ignore_stderr: bool, follow_exec: bool) -> Self {
         Self {
             snippit_length:          snippit_length,
             minimum_viable_string:   minimum_viable_string,
             max_logged_instructions: max_logged_instructions,
             capture_stdout:          !ignore_stdout,
             capture_stderr:          !ignore_stderr,
+            follow_exec:             follow_exec,
         }
     }
 
@@ -40,6 +58,11 @@ impl Mandrake {
         // Build a state then loop, one instruction at a time, till this ends
         let mut result = MandrakeOutput::new(child.id());
         let pid = Pid::from_raw(child.id() as i32);
+
+        // This flag is set when a call to execve is made, and we want to stop
+        // tracing. The new process creation causes debugging to turn back on,
+        // and we don't want that.
+        let mut completed = false;
 
         loop {
             match wait() {
@@ -56,7 +79,7 @@ impl Mandrake {
                     // Get the value for RIP, die if it's missing (shouldn't happen)
                     let rip = match regs.get("rip") {
                         Some(rip) => rip,
-                        None => bail!("RIP is missing from the register list!"),
+                        None => bail!("rip is missing from the register list!"),
                     };
 
                     match sig {
@@ -66,16 +89,39 @@ impl Mandrake {
                             step(pid, None)
                                 .map_err(|e| SimpleError::new(&format!("Couldn't step through code: {}", e)))?;
 
+                            // If we're already finished, just keep going
+                            if completed {
+                                resume_execution(pid)?;
+                                continue;
+                            }
+
                             // If we get an int3, it means we want to stop logging (ie, continue)
                             if let Some(instruction) = &rip.as_instruction {
+                                // Toggle "following" for "int 3"
                                 if instruction == "int3" {
                                     // Waiting for the step() to finish before continuing is important
-                                    wait()
-                                        .map_err(|e| SimpleError::new(&format!("Couldn't step over breakpoint: {}", e)))?;
+                                    resume_execution(pid)?;
 
-                                    cont(pid, None)
-                                        .map_err(|e| SimpleError::new(&format!("Couldn't resume execution after breakpoint: {}", e)))?;
+                                    // Continue so it's not logged
                                     continue;
+                                }
+
+                                // Toggle following on exec, unless the user turned that off
+                                if !self.follow_exec && instruction == "syscall" {
+                                    // Check the syscall num (based on rax)
+                                    let syscall_num = match regs.get("rax") {
+                                        Some(rax) => rax,
+                                        None => bail!("rax is missing from the register list!"),
+                                    };
+
+                                    // sys_execve
+                                    if syscall_num.value == EXECVE_NUM {
+                                        // Skip all future checks
+                                        completed = true;
+
+                                        // Resume, but don't skip the output (the user wants to see the exec!)
+                                        resume_execution(pid)?;
+                                    }
                                 }
                             }
 
