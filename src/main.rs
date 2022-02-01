@@ -115,6 +115,10 @@ struct Args {
     #[clap(long)]
     ignore_stderr: bool,
 
+    /// Enable to follow exec syscalls (usually not desirable, because exec starts a process from scratch and following that is very slow)
+    #[clap(long)]
+    follow_exec_syscalls: bool,
+
     #[clap(subcommand)]
     action: Action,
 }
@@ -134,6 +138,7 @@ fn main() {
         Some(args.max_instructions),
         args.ignore_stdout,
         args.ignore_stderr,
+        args.follow_exec_syscalls,
     );
 
     // Check which subcommand they ran
@@ -169,6 +174,20 @@ fn main() {
                         None => {
                             eprintln!("Missing rip in entry");
                         },
+                    }
+                }
+
+                if let Some(stdout) = r.stdout {
+                    if stdout != "" {
+                        println!();
+                        println!("Stdout: {}", stdout);
+                    }
+                }
+
+                if let Some(stderr) = r.stderr {
+                    if stderr != "" {
+                        println!();
+                        println!("stderr: {}", stderr);
                     }
                 }
             },
