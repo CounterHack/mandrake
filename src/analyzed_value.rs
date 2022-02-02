@@ -91,6 +91,26 @@ impl AnalyzedValue {
                 Some(s) => format!("`{}`", &s),
                 None => format!("Invalid string: 0x{:08x}", r.value),
             }
+        } else if s.field_type == "struct sockaddr" {
+            println!("Hi!");
+            println!("s: {:?}", s);
+            println!("r: {:?}", r);
+
+            let data = Self::new(pid, r.value, false, 10, 0);
+            match data.memory {
+                Some(m) => {
+                    if m[0] == 2 && m[1] == 0 {
+                        let port = (m[2] as u16) << 8 | (m[3] as u16);
+                        let ip = format!("{}.{}.{}.{}", m[4], m[5], m[6], m[7]);
+
+                        println!("Address: {}:{}", ip, port);
+                        format!("Address: {}:{}", ip, port)
+                    } else {
+                        format!("Unknown sockaddr type (not AF_INET): 0x{:04x}", ((m[1] as u16) << 8) | (m[0] as u16))
+                    }
+                },
+                None => format!("Invalid sockaddr pointer: 0x{:08x}", r.value),
+            }
         } else if s.is_pointer {
             if r.value == 0 {
                 "(nil)".to_string()
