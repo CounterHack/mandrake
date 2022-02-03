@@ -47,7 +47,7 @@
 46,sys_sendmsg,int fd,struct msghdr *msg,unsigned flags
 47,sys_recvmsg,int fd,struct msghdr *msg,unsigned int flags
 48,sys_shutdown,int fd,int how
-49,sys_bind,int fd,struct sokaddr *umyaddr,int addrlen
+49,sys_bind,int fd,struct sockaddr *umyaddr,int addrlen
 50,sys_listen,int fd,int backlog
 51,sys_getsockname,int fd,struct sockaddr *usockaddr,int *usockaddr_len
 52,sys_getpeername,int fd,struct sockaddr *usockaddr,int *usockaddr_len

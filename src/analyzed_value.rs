@@ -99,7 +99,7 @@ impl AnalyzedValue {
                         let port = (m[2] as u16) << 8 | (m[3] as u16);
                         let ip = format!("{}.{}.{}.{}", m[4], m[5], m[6], m[7]);
 
-                        format!("Address: {}:{}", ip, port)
+                        format!("IPv4 address: `{}:{}`", ip, port)
                     } else {
                         format!("Unknown sockaddr type (not AF_INET): 0x{:04x}", ((m[1] as u16) << 8) | (m[0] as u16))
                     }
