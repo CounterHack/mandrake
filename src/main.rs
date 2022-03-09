@@ -104,7 +104,7 @@ struct Args {
     minimum_viable_string: usize,
 
     /// The maximum number of instructions to read before stopping (to prevent infinite loops)
-    #[clap(short='i', long, default_value_t = 128, parse(try_from_str=maybe_hex))]
+    #[clap(short='i', long, default_value_t = 1024, parse(try_from_str=maybe_hex))]
     max_instructions: usize,
 
     /// Don't save output from stdout
