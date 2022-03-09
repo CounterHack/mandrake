@@ -5,6 +5,6 @@
 * Added a Plaintext output format
 * Don't trace into the new process created by `sys_execve` by default
 
-# 0.1.2
+# 0.1.2 (Mar 9, 2022)
 * Handle `SIGCHLD` cleanly
 * Parse socket structures in syscalls
