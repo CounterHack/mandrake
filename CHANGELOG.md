@@ -7,3 +7,4 @@
 
 # 0.1.2
 * Handle `SIGCHLD` cleanly
+* Parse socket structures in syscalls
